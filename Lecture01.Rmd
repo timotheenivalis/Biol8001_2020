@@ -1,0 +1,192 @@
+---
+title: "Statistical Thinking in Biology Research"
+subtitle: "An introduction"
+author: Terry Neeman
+institute: Australian National University
+date: "30th July 2020"
+fontsize: 12pt
+mathspec: true # for metropolis theme
+aspectratio: 169 # 16:9
+#classoption: handout
+output:
+ beamer_presentation:
+   theme: "Dresden" 
+   # https://deic-web.uab.cat/~iblanes/beamer_gallery/index_by_theme.html
+   #theme: "metropolis" # special
+   colortheme: "dolphin"
+   # https://deic-web.uab.cat/~iblanes/beamer_gallery/index_by_color.html
+   fonttheme: "structurebold"
+   # https://deic-web.uab.cat/~iblanes/beamer_gallery/index_by_font.html
+   latex_engine: xelatex # for metropolis theme
+   toc: false
+   slide_level: 2
+   keep_tex: true
+   #includes:
+   #   in_header: preamble.tex
+header-includes:
+  - \usepackage{fancyvrb}
+---
+ 
+## A few key ideas
+
+* Statistics in biology is the study of biological variation
+* Understanding biological variation informs experimental design
+* Understanding biological variation informs data analysis
+ 
+::: block
+### Statistical thinking is an essential component of scientific thinking
+:::
+
+ 
+## Some history of statistical methods in biology - 20th century
+
+* Agricultural experiments in Rothamsted Station, UK 
+* Stochastic processes in genetics
+* Clinical trials
+
+```{r, echo=FALSE, fig.align='center', out.width = "30%", out.height="30%", fig.cap = "R.A. Fisher 1890 - 1962"}
+ knitr::include_graphics("../images/Lecture1_RA_Fisher.png")
+```
+The ideas from these intellectual movements gave us foundations for how we think about and interpret data as scientific evidence.
+
+When teaching statistics, these ideas can get distilled, degraded into a simplistic and false narrative.
+
+# Some false narratives ("cautionary tales")
+
+## "Statistical analysis is all about getting a p-value"
+
+### Vaccine challenge experiment
+
+* 6 mice per vaccine group (saline/ low dose / high dose)
+* All mice challenged with Shigella bacteria at Day 14
+* Outcome: 7-day average symptom score post-challenge
+
+```{r, echo=FALSE, fig.align='right', out.width = "50%", out.height="50%", fig.cap = "Mean Symptom Score, by Treatment"}
+ knitr::include_graphics("../images/Lecture1_barplot.png")
+```
+
+::: block
+## Statistical analysis: one-way ANOVA, p=0.04 post hoc Bonferroni adjusted
+:::
+
+## Was there a cage effect or a vaccine effect?
+
+The observed difference in symptom scores could be due to:
+
+* animal cage
+* vaccine treatment
+
+These two factors are **CONFOUNDED**. It is impossible to separate out these two effects. 
+
+```{r, echo=FALSE, fig.align='right', out.width = "50%", out.height="50%", fig.cap = "Mean Symptom Score, by Treatment"}
+ knitr::include_graphics("../images/Lecture1_cages.png")
+```
+
+```{r, echo=FALSE, fig.align='center', out.width = "50%", out.height="50%", fig.cap = "Mean Symptom Score, by Treatment"}
+ knitr::include_graphics("../images/Lecture1_cages.png")
+```
+
+
+## "P > 0.05 means 'same'; P < 0.05 means 'different'"  
+
+Experimental set-up: Are temperature mechanisms modified in a genetically-engineered tomato plant?
+
+* Genotypes: WT or mutant
+* watering conditions: normal or drought
+* Outcome: leaf temperature at 7 days post-treatment
+
+```{r, echo=FALSE, fig.align='right', out.width = "40%", out.height="40%", fig.cap = "Leaf temperature under different watering conditions"}
+ knitr::include_graphics("../images/Lecture1_interaction.png")
+```
+## "When in doubt, use lots of t-tests"
+
+Research questions: Are mice susceptible to obesity when exposed to a high fat diet?
+Are NODk mice **MORE** susceptible than mice without mutation?
+```{r echo = FALSE, fig.height = 2.3, fig.width=3.5, fig.align='center'}
+library(ggplot2)
+mice<- read.csv("../Data/diet and diabetic mice.csv")
+ggplot(mice, aes(x=Age, y=Wt, group = MouseID, colour=Diet))+
+  geom_point()+
+  geom_line()+
+  facet_wrap(~Strain)+
+  theme_classic()
+```
+
+## "More than 2 groups? Use 1-way ANOVA"
+
+Research question: Which barley variety has the biggest yield?
+
+* Five barley varieties, grown in 6 locations
+* Two growing seasons
+* Outcome: yield (tonnes/hectare)
+
+```{r,  echo = FALSE, fig.height = 1.5, fig.width=3, fig.align='center'}
+library(MASS)
+barley <- immer
+ggplot(barley, aes(Var, Y1))+
+   geom_boxplot()+
+   theme_classic()
+```
+
+## Location contributes to the variation in yield
+
+```{r, echo = FALSE, fig.height = 2, fig.width=3.5, fig.align='center'}
+
+ggplot(barley, aes(Var, Y1, colour=Loc))+
+   geom_jitter(width=0.02, height=0.02, size = 2.5)+
+   theme_classic()
+```
+Yield is highest in Locations C and W.
+Yield is lowest in Locations D and GR.
+             
+## Varieties should be compared *within* location
+
+```{r, echo = FALSE, fig.height = 2, fig.width=3.5, fig.align='center'}
+
+ggplot(barley, aes(Loc, Y1, colour=Var))+
+   geom_jitter(width=0.02, height=0.02, size = 2.5)+
+   theme_classic()
+```
+
+Notice that: Variety M is near the bottom in most locations  
+             Variety T is near the top in most locations 
+             
+## "When I see a scatterplot, I fit a linear regression"
+Ecology researchers recorded **density of thorn-like plants** in multiple locations across five regions, and measured **per hectare consumption** of plant material by herbivores. 
+
+```{r, echo = FALSE, message = FALSE, fig.height = 1.8, fig.width=3.2, fig.align='center'}
+thorn <- read.csv("../Data/thorndata.csv")
+ggplot(thorn, aes(thorndensity, herbivory))+
+   geom_point()+
+   geom_smooth(method = "lm", alpha=0.01)+
+   theme_classic()
+```
+## Herbivory vs Thorns, by Site
+Ecology researchers recorded **density of thorn-like plants** in multiple locations across **five sites**, and measured **per hectare consumption** of plant material by herbivores. 
+
+```{r, echo = FALSE,message = FALSE, fig.height = 1.8, fig.width=3.2, fig.align='center'}
+thorn <- read.csv("../Data/thorndata.csv")
+ggplot(thorn, aes(thorndensity, herbivory, colour=site))+
+   geom_point()+
+   geom_smooth(method = "lm", alpha=0.01)+
+   theme_classic()
+```
+## Summary
+
+* Message 1: Building a scientific case for a treatment effect is not just about the p-value. Must understand the context of experiment(s).
+
+* Message 2: P-values from simple contrasts cannot tell us if the contrasts are different. 
+
+* Message 3: Interpreting experimental results needs more than t-tests. 
+
+* Message 4: We need to incorporate known sources of variation into statistical analyses.
+
+* Message 5: What's more important than p-values and t-tests?
+   * recognising patterns in data
+   * understanding sources of variation
+   * useing data to build information about complex systems
+   * using statistics to allow the data to speak
+   
+
+
+
