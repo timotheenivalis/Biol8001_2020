@@ -44,7 +44,7 @@ header-includes:
 * Stochastic processes in genetics
 * Clinical trials
 
-```{r, echo=FALSE, fig.align='center', out.width = "30%", out.height="30%", fig.cap = "R.A. Fisher 1890 - 1962"}
+```{r, echo=FALSE, fig.align='center', out.width = "20%", out.height="30%", fig.cap = "R.A. Fisher 1890 - 1962"}
  knitr::include_graphics("../images/Lecture1_RA_Fisher.png")
 ```
 The ideas from these intellectual movements gave us foundations for how we think about and interpret data as scientific evidence.
