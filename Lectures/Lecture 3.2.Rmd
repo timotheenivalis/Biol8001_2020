@@ -1,0 +1,89 @@
+---
+title: "Lecture 3.2 Fitting Models in R Part II"
+author: "T. Neeman"
+date: "10/07/2020"
+output: html_document
+---
+
+
+## Model Parameters
+
+In the last lecture, we set up a workflow for a statistical analysis of data, using a model framework. We used a simple data example to illustrate the workflow. In this lecture, we'll illustrate how a statistical model is very flexible framework for assessing associations and patterns in our data. 
+
+A model is defined by a set of parameters. The parameters are the signal characteristics of the model. That is, they define the relationship between variables. The data are used to **estimate** the model parameters. As with all estimates, one also estimates the **uncertainty** (SE) of the model parameter estimates. 
+
+The parameters estimated in the seed orchard model were (1) the **mean** in each group, and (2) the **mean difference**. The variation around the means was also estimated, and is of interest to us, especially if we plan to do another study. For example, in a follow-up study, we'll need to estimate the signal:noise ratio; the larger the noise (variation) relative to the signal, the more samples we'll need to distinguish the groups.
+
+We estimate 3 parameters, but there is some redundancy here, since $'meandiff' = mean(SO) - mean(P)$. On the other hand, the mean difference is the parameter of greatest interest to us, because it estimates the association between treatment and outcome. So whilst this model has two parameters, there is more than one way to define the model parameterisation. 
+
+R parameterises the seed orchard model as follows:
+
+* Parameter 1: mean of the reference group. The reference group is the group with factor level 1; in this case group 'SO'. 
+
+* Parameter 2: mean difference between two groups. 
+
+Notice that the mean of the P group is Parameter 1 + Parameter 2. 
+
+The parameter estimates are obtained via the **summary** function applied to the model object.
+
+```{r summary_seed}
+seed <- read.csv("../Data/seed orchard data.csv")
+seed$seedlot <- factor(seed$seedlot, levels = c("SO", "P"))
+model.seed <- lm(dbh ~ seedlot, data = seed)
+summary(model.seed)
+```
+
+Compare the parameter estimates with the mean estimates from the **emmeans** function
+
+```{r means_seed}
+library(emmeans)
+emmeans(model.seed, ~seedlot)
+```
+
+### Exercise:
+
+(1) What are the model parameters in the dark respiration experiment comparing C3 and C4 plants in Exercise 1, Lecture 3.1? What are the model parameter estimates?
+
+## A model for multiple groups
+
+In Exercise 2, Lecture 3.1, the CSIRO researcher compared yield of 3 wheat varieties. The model associated with this experiment has 3 parameters. One parameterisation is the mean of each variety. But R parameterises the model as:
+
+* Parameter 1: mean of the reference group. We can choose the reference to be the standard variety.
+
+* Parameter 2: mean difference between New and standard (reference) variety.
+
+* Parameter 3: mean difference between NewPLUS and standard (reference) variety.
+
+Notice that $mean(New) = Parameter 1 + Parameter 2$, and $mean(NewPLUS) = Parameter 1 + Parameter 3$. 
+
+When there are no differences amongst the varieties, then $Parameter 2 = Parameter 3 = 0$. The ANOVA table for variety has 2 degrees of freedom, and the associated p-value is a measure of evidence against the hypothesis that both parameters are 0 (no variey effect).
+
+What are the model parameter estimates in the Wheat Variety experiment
+
+```{r summary_wheat}
+wheat <- read.csv("../Data/wheat yield PLUS.csv")
+wheat$Variety <- factor(wheat$Variety, levels = c("Standard", "New","NewPLUS"))
+model.wheat <- lm(Yield ~ Variety, data = wheat)
+summary(model.wheat)
+```
+
+### More exercises: 
+
+(2) For the wheat variety experiment, compare the model parameter estimates with the mean estimates obtained from the **emmeans** function.
+
+(3) Peas were grown under 5 different growth media which differed in the type of sugar used. The different types of sugar (including a no sugar control) were:  control, glucose, fructose, g&f and sucrose. The experimenter recorded the lengths of pea sections. Ten pea section lengths were recorded per treatment. 
+
+    (a) fit a model to these data, and report your assessment of how growth media affects pea length.
+  
+    (b) How many parameters in this model? Which is the reference group for this experiment? Use the summary function to obtain the parameter estimates. 
+  
+    (c) What is the relationship between the model parameters and the treatment means?
+  
+## A model for associations between continuous variables
+
+In Lecture 2, we described a data generating process for plant yield given precipitation. Now let's reverse engineer this, and imagine that we have a set of data collected over 50 years where we've captured annual rain and yield. 
+TBC...
+
+
+
+

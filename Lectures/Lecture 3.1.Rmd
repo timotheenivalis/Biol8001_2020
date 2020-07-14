@@ -1,0 +1,164 @@
+---
+title: "Lecture 3.1 Fitting Models in R Part I"
+author: "T. Neeman"
+date: "10/07/2020"
+output: html_document
+---
+
+## Understanding your data
+
+Now that we have an idea of how a model can conceptually represent your experiment. But this is just a blueprint (aka the conceptual framework). The purpose of the blueprint is to keep us focussed on the research objectives. There remains the question - how can we use this blueprint to report the relevant outcomes of the experiment? 
+
+We also discussed statistical inference. Statistical inference is the process of inferring a general rule or association, given the data we've observed. I tried to communicate the idea that inference is a form of reasoning, and not a mathematical proof.
+
+What is the role of statistical inference in models? Statistical tests are effectively tests of the proposed associations ("signals") in the model. A statistical test is an assessment of the evidence that the proposed associations are supported by the data. P-values are measures of evidence that the hypothesised associations are true associations.
+
+P-values have come to play an oversized role in statistical inference, perhaps for the same reason that bibliometric data play an oversized role in assessing good scholarship. The p-value is a single number, and for that reason, it is vulnerable to unsophicated hackers who contort its meaning into a "make or break" statistic.  Researchers "learn" that p < 0.05 means they can publish their findings, whilst p > 0.05 means they should keep collecting data until p < 0.05 (or bury their study). 
+
+In this workflow, we'll meet the p-value, but hopefully you'll see that it's just one of the statistics in the overall analysis. The modelling approach should always be data-centric, so we focuse on summaries of the data (e.g. means), and estimates of treatment effects (mean differences).
+
+We'll introduce the workflow using a simple dataset from Lecture 2: the seed orchard data. We're already familiar with these data, and can focus our attention on the process. 
+
+We organise our analyses in R as follows:
+
+(1) Preparation: import libraries that we'll need for the analyses.
+(2) Set-up: import the data set, and do some initial checks.
+(3) Data management:  set data types/ restructure/subset data as needed.
+(4) Data exploration: visualisation for assessing patterns/associations.
+(5) Fit statistical model:
+
+    (a) assess model assumptions
+    (b) statistical inference
+    (c) obtain estimates of treatment effects (plus/minus uncertainty)
+    
+(6) Graphical or tabular summary of statistical model.
+
+## Analysis workflow in R
+
+### (1) Preparation: import libraries
+
+We don't always know at the outset what libraries we'll need for our analysis. We don't always write code from top to bottom. It's good practice to keep the list of packages
+used at the top of the script, so that anyone reviewing the code can see the packages that were used.
+
+```{r libraries}
+library(ggplot2)
+library(emmeans)
+library(ggbeeswarm)
+```
+
+### (2) Set-up: import data
+
+Most of the data sets we'll use are in .csv format. It's possible to import data in other file types, such as .xlsx, or formats used by SPSS, SAS or Stata. You'll need to import another package (e.g. readxl, or readr).
+
+You'll need to provide the full path name of the file, so that read.csv can find the data file. If your .R file is in the main directory, and the data are stored in the Data/ directory, then the path name is "Data/seed orchard data.csv". 
+
+```{r import}
+seed <- read.csv("../Data/seed orchard data.csv")
+str(seed)
+```
+
+The function str() shows us the data structure. We see that there are 16 observations and 3 variables. The variable names are plot, seedlot and dbh (diameter at breast height). 
+
+### (3) Data management
+
+Seedlot has data type character or text. We could make seedlot a factor or categorical variable. More on this later.
+
+```{r data_management}
+seed$seedlot <- factor(seed$seedlot, levels = c("SO", "P"))
+```
+
+### (4) Data exploration
+
+Data exploration is arguably the most important step of the workflow. In data exploration, we assess the conceptual representation of our research question. We can visually assess how experimental factors influence the response, how experimental factors influence the effect of other factors. We can visually assess how the response varies by plot, by day, by tray etc. 
+
+For these data, there is only a single experimental factor: seedlot. There are a number of different ways to visualise the distribution of tree diameters (dbh) by seedlot.
+
+#### boxplot
+
+The boxplot can be an excellent way to summarise a data distribution, if the distribution is unimodal with lots of data points. The box outline represents the **25 -75 quartiles** of the distribution. The centre line is the data **median**, and the "whiskers" reach to the min/max data points, up to 1.5 times the box width. Data outside these these boundaries are displayed as "outliers".
+```{r boxplot, fig.height=2, fig.width = 3, fig.align = 'center'}
+ggplot(seed, aes(x=seedlot, y=dbh, col=seedlot))+
+  geom_boxplot()
+```
+
+With only 8 data points in each group, it may be more visually informative to just show the actual data. We do this in ggplot by changing the geom to geom_point().
+
+#### simple point plot
+
+```{r points, fig.height=2, fig.width = 3, fig.align = 'center'}
+ggplot(seed, aes(x=seedlot, y=dbh, col=seedlot))+
+  geom_point()
+```
+
+You may notice that there appear to be only 7 points in the P group. Two of the points have the same value, and show up as a single point. This can be misleading. One way around this problem is to "jitter" the points. You can control the amount of jitter using height= and width = parameters. For larger data sets, beeswarm plots can look less chaotic.
+
+#### jittered point plots
+
+```{r jitter, fig.height=2, fig.width = 3, fig.align = 'center'}
+ggplot(seed, aes(x=seedlot, y=dbh, col=seedlot))+
+  geom_jitter(width = 0.02)
+```
+```{r beeswarm, fig.height=2, fig.width = 3, fig.align = 'center'}
+ggplot(seed, aes(x=seedlot, y=dbh, col=seedlot))+
+  geom_beeswarm()
+```
+
+### (5) Fitting a statistical model
+
+Fitting a statistical model to data takes only a single line of code. The work comes in assessing whether the model is a reasonable representation of the data, and summarising the key findings of the experiment. 
+
+Notice the syntax of the linear model function (lm): the formula `response ~ factor` is the model specification; with response variable first, then ~, followed by factors specified by the model. The data statement indicates the source of the variables.
+
+#### fit the model, and create model object "model.seed"
+
+```{r model}
+model.seed <- lm(dbh ~ seedlot, data = seed)
+```
+
+Statistical inference: We want to know whether the origins of the seeds (seed orchard of plantation) affects the expected tree diameter. The exploratory plots suggest that seeds from the seed orchard may result in larger trees, but how strong is this evidence? Statistical inference is a principled way of addressing this question. Analysis of variance (ANOVA) compares the group mean differences to the within-group variation. 
+
+Large between-group differences relative to within group variation (**signal:noise ratio** high) indicates evidence of treatment effect. 
+
+Small between-group differences relative to within group variation (**signal:noise ratio** low) indicates **lack of evidence** of treatment effect.
+
+When there is evidence that seedlot affects tree diameter, then we report mean estimates by group, treatment effect estimates (mean difference) plus/minus uncertainty (SE).
+
+When there is a lack of evidence that seedlot affects tree diameter, we can still report mean estimates (and SE) by group, but the overall mean tree diameter is the main summary measure from this experiment. 
+
+#### ANOVA table for "model.seed"
+```{r anova}
+anova(model.seed)
+```
+
+The model summarises the data as **group mean estimates** and **variation around the means**. We want to look at both of these summaries to assess whether our model is a reasonable summary of our data. Our assumptions are that the variation around the means is approximately normally distributed, the within-group variation is similar for each group, and there are no points that unduly influence the inference. 
+
+#### Group mean estimates and treatment effect estimates
+```{r group_summary}
+emmeans(model.seed, pairwise~seedlot)
+```
+
+#### distribution of variation around means
+```{r variation}
+par(mfrow=c(2,2))
+plot(model.seed)
+```
+
+#### (6) Summarise model fit in a table or graphic
+
+We'll spend more time on this section in future sessions. In the graphic below, we'll show group mean estimates, SE and the p-value, our measure of evidence of a difference between groups.
+
+```{r model_summary, fig.height = 3, fig.width = 2, fig.align = 'center'}
+results1<-summary(emmeans(model.seed, ~seedlot))
+ggplot(results1, aes(x=seedlot, y=emmean, fill = seedlot))+
+  geom_bar(stat="identity")+
+  geom_errorbar(aes(ymin=emmean-SE, ymax = emmean+SE), width = 0.2)+
+  annotate("text", x=1.75, y=33, label = "p = 0.093")+
+  ylim(c(0,35))+
+  theme_classic()
+```
+
+## Exercises:
+
+(1) A plant group at ANU conducted a pilot study to assess whether C3 and C4 plants differ in dark respiration. They selected a range of C3 and C4 plants (90 per group) and measured dark respiration. Set up a workflow to conduct a statistical analysis of their experiment (dark_resp in C3C4.csv). 
+
+(2) A field experiment conducted at CSIRO compared wheat yields of a standard variety, a new variety, and third (New PLUS) variety. They used a large block with 150 plots, and randomly assigned a variety to each plot. Wheat yield was measured in tonnes/hectare. Set up a workflow to conduct a statistical analysis of their experiment ( wheat yield PLUS.csv)
