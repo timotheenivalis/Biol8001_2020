@@ -1,0 +1,302 @@
+---
+title: "Introduction to Generalized Linear Models"
+subtitle: "Binary and count data"
+author: "Timothee Bonnet"
+date: "16 July 2020"
+output: 
+  html_document:
+    theme: united
+    highlight: pygments
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Today:
+
+* Understand why linear models do not work well with some type of data, such as binary data.
+* Fit generalized linear models, in particular binomial (a.k.a. logistic regression)
+* Interpret and visualize binomial GLMs
+
+
+Let's download some data to play with:
+```{r, cache=TRUE}
+
+download.file("https://timotheenivalis.github.io/data/survivalweight.csv", 
+              destfile = "Data/survivalweight.csv")
+
+download.file("https://timotheenivalis.github.io/data/voles.csv", 
+              destfile = "Data/voles.csv")
+
+```
+
+
+```{r}
+library(ggplot2)
+library(performance)
+```
+
+
+## Failure of linear models
+
+That's a typical linear model (linear regression) performing okay:
+```{r}
+set.seed(123)
+x <- rnorm(20)
+y <- 1 + x + rnorm(20)
+
+datlinear <- data.frame(x=x, y=y)
+lm0 <- lm(y~x, data = datlinear)
+  
+ggplot(datlinear, aes(x=x, y=y))+
+geom_smooth(method="lm") + geom_point() +
+geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
+
+check_model(lm0)
+
+```
+
+Now a model with the same structure, but fitted to binary data different data has more questionable performance:
+```{r}
+set.seed(123)
+x <- rnorm(30)
+latent <- 1 + 2*x + rnorm(30, sd = 0.5)
+y <- 1/(1+exp(-latent))
+obs <- sapply(y, FUN=function(x){rbinom(1,1,x)})
+
+datbinary <- data.frame(x=x, y=obs)
+lm1 <- lm(y~x, data = datbinary)
+
+ggplot(datbinary, aes(x=x, y=y))+
+geom_smooth(method="lm", fullrange=TRUE) + geom_point() +
+geom_segment(aes(x=x, y=y, xend= x, yend=lm1$fitted.values)) +
+  xlim(c(-3,2))
+
+check_model(lm1)
+
+
+```
+
+## Fit GLM for binary data: "binomial" family
+
+
+```{r}
+glm1 <- glm(y~x, data = datbinary, family = "binomial")
+
+ggplot(datbinary, aes(x=x, y=y))+
+geom_smooth(method="glm", method.args = list(family="binomial"), fullrange=TRUE) + geom_point() +
+geom_segment(aes(x=x, y=y, xend= x, yend=glm1$fitted.values)) +
+  xlim(c(-3,2))
+
+```
+
+For binary binomial glms there are no assumptions about the distribution of residuals, apart from the independence of the data generating process.
+Diagnostic plots are not really useful; they look ugly but that's fine, because they are assessing linear model's assumptions, not glm's.
+```{r}
+plot(glm1)
+check_model(glm1)
+
+```
+
+
+How to interpret results?
+```{r}
+summary(glm1)
+
+coef(glm1)[1] + coef(glm1)[2]*datbinary$x
+
+predict(glm1)
+
+datbinary$latent_y <- predict(glm1)
+```
+
+Visualise data (black) vs. what is predicted by regression coefficients:
+```{r}
+ggplot(datbinary, aes(x=x, y=y))+ geom_point(color="black")+
+  geom_point(inherit.aes = FALSE, aes(x=x, y=latent_y), color="red")
+```
+
+The difference is because regression coefficients of a glm are expressed on a different scale.
+
+To go from the data to the regression scale we apply a logit transform:
+
+$$
+\mathrm{logit}(y) = \log(\frac{y}{1-y})
+$$
+
+To go from model predictions on the regression scale to the data scale we apply the inverse tranformation, which is
+$$
+\mathrm{logit}^{-1}(y) = \frac{1}{1+e^{-y}}
+$$
+in R you can run this inverse logit function with plogis:
+
+```{r}
+plogis(0)
+1/(1+exp(-0))
+
+plogis(0.98)
+1/(1+exp(-0.98))
+
+plogis(-0.98)
+1/(1+exp(--0.98))
+```
+
+We can better understand what the model says after the plogis transformation:
+```{r}
+datbinary$transformed_latent_y <- plogis(predict(glm1))
+
+ggplot(datbinary, aes(x=x, y=y))+ geom_point(color="black")+
+  geom_point(inherit.aes = FALSE, aes(x=x, y=transformed_latent_y), color="red")
+```
+
+
+The model predictions obtained from the regression parameters are probabilities to observe 1 rather than a 0.
+
+How does the model relate model predictions to the data?
+The Bernouilli distribution, rbinom(n=, size= 1, prob=), a special case of the binomial distribution with size=1.
+
+```{r}
+rbinom(n = 100, size = 1, prob = 0.9)
+
+sapply(datbinary$transformed_latent_y, 
+       function(x) rbinom(n = 10, size = 1, prob = x))
+```
+
+
+
+From this example, we saw what a GLM is:
+
+1. A linear function (reponse = intercept + slope × predictor . . . ), what you see with summary(glm1)
+2. A "Link function"" = a map between the linear function (−∞ to +∞) and a
+probability distribution (from 0 to 1 for Bernouilli)
+3. Probability distribution (Bernouilli, Binomial, Poisson. . . ) assumed to generate
+the data (either 0 or 1 for Bernouilli)
+
+### Practice 
+
+```{r}
+survdat <- read.csv("Data/survivalweight.csv")
+
+str(survdat)
+
+```
+
+1. Model effect of weight
+```{r}
+ggplot(survdat, aes(x=weight, y=survival)) +
+   geom_jitter(width = 0.0, height = 0.02)  +
+  geom_smooth(method = "glm", method.args = list(family="binomial"))
+
+mw <- glm(survival ~ weight, data=survdat, family = "binomial")
+summary(mw)
+
+```
+
+What probability of survival does the model predict for a weigth of 30?
+```{r}
+plogis(coef(mw)[1] + coef(mw)[2]*30)
+
+ggplot(survdat, aes(x=weight, y=survival)) +
+   geom_jitter(width = 0.0, height = 0.02)  +
+  geom_smooth(method = "glm", method.args = list(family="binomial"))+
+  geom_point(x=30, y=plogis(coef(mw)[1] + coef(mw)[2]*30), color="red")
+
+```
+
+2. Model effect of Sex
+```{r}
+
+ggplot(survdat, aes(x=sex, y=survival)) +
+  geom_jitter(width = 0.1, height = 0.02) 
+
+msex <- glm(survival ~ sex, data=survdat, family = "binomial")
+summary(msex)
+
+plogis(coef(msex)[1]) #female prediction
+plogis(coef(msex)[1]+coef(msex)[2]) #male prediction
+
+# automated calculation with predict:
+newdat <- data.frame(sex=c("Female", "Male")) 
+(newdat$pred <- predict(object = msex, newdata = newdat, type = "response"))
+
+ggplot(survdat, aes(x=sex, y=survival)) +
+  geom_jitter(width = 0.1, height = 0.02) +
+  geom_point(data = newdat, aes(x=sex, y=pred, color=sex))
+
+# Adding SE (approximate CI)
+newdat <- data.frame(sex=c("Female", "Male")) 
+predobj <- predict(object = msex, newdata = newdat,
+                        type = "response", se.fit=TRUE)
+newdat$pred <- predobj$fit
+newdat$SE <- predobj$se.fit
+newdat$lowci <- newdat$pred -1.96*newdat$SE
+newdat$upci <- newdat$pred +1.96*newdat$SE
+
+ggplot(survdat, aes(x=sex, y=survival)) +
+  geom_jitter(width = 0.1, height = 0.02) +
+  geom_point(data = newdat, aes(x=sex, y=pred, color=sex))+
+  geom_errorbar(inherit.aes = FALSE,
+                data = newdat, aes(x=sex, ymin=lowci, ymax=upci, color=sex), width=0.2)
+```
+
+
+3. Interaction weight:Sex?
+```{r}
+ggplot(survdat, aes(x=weight, y=survival, color=sex)) +
+  geom_point() + geom_smooth(method = "glm", method.args = list(family="binomial"))
+
+msw <- glm(survival ~ sex*weight, data=survdat, family = "binomial")
+summary(msw)
+```
+
+4. Draw prediction and CI for low and heigh weight for case of intercation.
+
+You must first calculate CI, then back-transform (i.e., apply plogis), or the CI goes below 0 or above 1. 
+In a GLM CIs are asymetrical. 
+
+```{r}
+newdat <- expand.grid(sex=c("Female", "Male"), weight=c(18,40)) 
+
+# this is inexact:
+predobj <- predict(object = msw, newdata = newdat,
+                        type = "response", se.fit=TRUE)
+newdat$pred <- predobj$fit
+newdat$SE <- predobj$se.fit
+newdat$lowci <- newdat$pred -1.96*newdat$SE
+newdat$upci <- newdat$pred +1.96*newdat$SE
+newdat # some values beyond 0 / 1
+```
+
+The correct way:
+```{r}
+predobj <- predict(object = msw, newdata = newdat,
+                        type = "link", se.fit=TRUE)
+newdat$pred <- plogis(predobj$fit)
+newdat$lowci <- plogis(predobj$fit -1.96*predobj$se.fit)
+newdat$upci <- plogis(predobj$fit +1.96*predobj$se.fit)
+newdat
+
+ggplot(survdat, aes(x=weight, y=survival, color=sex)) +
+  geom_point(alpha=0.1) + geom_smooth(method = "glm", method.args = list(family="binomial"))+
+  geom_point(data=newdat, aes(x=weight, color=sex, y=pred), size=2, alpha=0.5)+
+geom_errorbar(data=newdat,  inherit.aes = FALSE,
+              aes(x=weight, color=sex, ymin=lowci, ymax=upci), width=1)
+```
+
+
+
+## More practice
+
+Explain variation in annual survival in the vole data set.
+
+```{r}
+voles <- read.csv("Data/voles.csv")
+head(voles)
+```
+
