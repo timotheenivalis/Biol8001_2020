@@ -143,6 +143,13 @@ par(mfrow=c(2,2))
 plot(model.seed)
 ```
 
+The first plot Residuals vs Fitted (top left) has *fitted values* on the x-axis and *residuals* on the right axis. The *fitted values* are the mean values for each group (28.7 and 30.6), and the *residuals* are the observed value - fitted value. For example, the point next to (12) is a tree with a larger than average tree diameter, whereas the point next to (10) is a tree with a smaller than average tree diameter. 
+
+The second plot Normal Q-Q (top right) matches up the distribution of the "residuals" with the normal distribution. The x-axis are the theoretical quantiles of the normal distribution: given 16 data points from a standard normal distribution (N(0,1)), what values we would expect them to have. The y-axis are the standardised residual (observed - fitted) in order from smallest to largest. The dotted line shows where the points would sit if the distribution of the residuals matched the standard normal distribution. For example, point (12) has a larger residual than we sould expect under normality.
+
+The third plot Scale-Location (bottom left) can be a useful plot for assessing the homogeneity of variance assumption (within-group variation is similar for each group). The red line indicates the mean of the square root of the absolute value of the residuals. If the red line has a distinct pattern (ie not flat!), then this is an indication that the within-group variation differs between groups. 
+
+
 #### (6) Summarise model fit in a table or graphic
 
 We'll spend more time on this section in future sessions. In the graphic below, we'll show group mean estimates, SE and the p-value, our measure of evidence of a difference between groups.
