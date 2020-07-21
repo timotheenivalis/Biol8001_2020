@@ -125,10 +125,14 @@ Plants respond to external nitrate availability in the soil by altering their ro
 
 In this glasshouse experiment, researchers grew legumes under 6 different soil nitrogen conditions: 0.01, 0.1, 1,2, 10, and 100 mM. Seedlings were grown for 4 weeks, then harvested, dried and RMR measured. 
 
+### Import data
+
 ```{r legume_nitrate}
 legume<-read.csv("../Data/legume nitrate experiment.csv")
 str(legume)
 ```
+
+### Data exploration
 
 We look at the relationship between treatment (nitrate concentration) and response (RMR). Typically, one plots log(concentration) on the x-axis. We present both RMR and log(RMR) as potential response variables. 
 ```{r legume_plot}
@@ -145,6 +149,8 @@ We have a couple of options regarded how we include nitrate in the model. On the
 *Option 2:* Treat log10(nitrate concentration) as a continuous variable. The simplest model to consider is log(RMR) = a + b * log10(nitrate). This model has 2 parameters: *a* the intercept, and *b* the slope. *b*  measures the association between log10(nitrate) and log(RMR). For every 10-fold increase in concentration, log(RMR) increases by b units. 
 
 We'll go with option 2, given the data and our research question. 
+
+### Fit statistical model to data
 ```{r model_fit}
 model.legume<-lm(log_RMR ~ log10(nitrate), data = legume)
 anova(model.legume)
@@ -157,18 +163,21 @@ The summary() function provides the parameter estimates and SE(uncertainty). The
 
 Finally, the p-value is derived from the t-value, and has an easily recognisable interpretation. 
 
+### Check model assumptions
+
 Following our standard workflow, we assess our model assumptions with residual plots.
 
 ```{r check_model}
 par(mfrow=c(2,2))
 plot(model.legume)
 ```
+### Summarise model using graphic
 
 A summary of the model can be shown together with the data. We need something equivalent to means and standard errors. Instead of the emmeans() function, we'll use the predict() function to get estimated mean log_RMR for a range of nitrate concentrations. The predict() function includes an option for 95% confidence intervals around the estimated means. The confidence interval is mean +- 1.96*SE.
-```{r model_summary, fig.height = 3, fig.width = 2, fig.align = 'center'}
+```{r model_summary}
  newdat<-data.frame(nitrate=c(0.01, .1, 1, 2, 10,100))
  
-predict1<-predict(check, newdat, interval = "confidence") %>%
+predict1<-predict(model.legume, newdat, interval = "confidence") %>%
    as_tibble() %>%
    mutate(nitrate=newdat$nitrate, log_RMR=fit)
 

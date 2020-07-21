@@ -150,7 +150,7 @@ The second plot Normal Q-Q (top right) matches up the distribution of the "resid
 The third plot Scale-Location (bottom left) can be a useful plot for assessing the homogeneity of variance assumption (within-group variation is similar for each group). The red line indicates the mean of the square root of the absolute value of the residuals. If the red line has a distinct pattern (ie not flat!), then this is an indication that the within-group variation differs between groups. 
 
 
-#### (6) Summarise model fit in a table or graphic
+#### (6) Summarise model in a table or graphic
 
 We'll spend more time on this section in future sessions. In the graphic below, we'll show group mean estimates, SE and the p-value, our measure of evidence of a difference between groups.
 

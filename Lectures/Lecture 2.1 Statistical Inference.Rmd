@@ -11,7 +11,7 @@ Anyone who studies biology recognises that the world is not deterministic. As sc
 
 Statistics is a tool that can help us learn about the world from data, by putting the experiment or observational survey into a probabilistic framework. 
  
-By a probabilistic framework, I mean a data generating process or statistical model. Like our examples in Lecture 2, data generating processes have two components: a functional component that describes mathematical relationships, and a random component that describes the probabilistic component (expected variation or uncertainty). 
+By a probabilistic framework, I mean a data generating process or statistical model. Like our examples in Lecture 2, data generating processes have two components: a functional component that describes mathematical relationships between experimental factors and responses, and a random component that describes the probabilistic component (expected variation or uncertainty). 
 
 The data generating process that we ascribe to the data may not be the “true” model. It’s impossible to know that true generating process. But we hope that it will be a useful model. Useful: it generates data that is consistent with our past, present and future observations.
 
