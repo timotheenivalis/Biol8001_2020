@@ -31,7 +31,7 @@ Notice that the mean of the P group is Parameter 1 + Parameter 2.
 The parameter estimates are obtained via the **summary** function applied to the model object.
 
 ```{r summary_seed}
-seed <- read.csv("../Data/seed orchard data.csv")
+seed <- read_csv("../Data/seed orchard data.csv")
 seed$seedlot <- factor(seed$seedlot, levels = c("SO", "P"))
 model.seed <- lm(dbh ~ seedlot, data = seed)
 summary(model.seed)
@@ -44,46 +44,43 @@ library(emmeans)
 emmeans(model.seed, ~seedlot)
 ```
 
-### Exercise:
+### Question:
 
-(1) What are the model parameters in the dark respiration experiment comparing C3 and C4 plants in Exercise 1, Lecture 3.1? What are the model parameter estimates?
+What are the model parameters in the dark respiration experiment comparing C3 and C4 plants in Exercise 1? What are the model parameter estimates?
 
 ## A model for multiple groups
 
-In Exercise 2, Lecture 3.1, the CSIRO researcher compared yield of 3 wheat varieties. The model associated with this experiment has 3 parameters. One parameterisation is the mean of each variety. But R parameterises the model as:
+In Assignment 3, we described an experiment where peas were grown under 5 different growth media which differed in the type of sugar used (pea data.csv). The different types of sugar (including a no-sugar control) were:  control, glucose, fructose, g&f and sucrose. The experimenter recorded the lengths of pea sections. 
 
-* Parameter 1: mean of the reference group. We can choose the reference to be the standard variety.
+How many parameters in this model? What is the reference group for this experiment? 
 
-* Parameter 2: mean difference between New and standard (reference) variety.
+* Parameter 1: mean of the reference group ("control").
 
-* Parameter 3: mean difference between NewPLUS and standard (reference) variety.
+* Parameters 2 - 5: mean difference in pea length between each sugar treatment and control.
 
-Notice that $mean(New) = Parameter 1 + Parameter 2$, and $mean(NewPLUS) = Parameter 1 + Parameter 3$. 
 
-When there are no differences amongst the varieties, then $Parameter 2 = Parameter 3 = 0$. The ANOVA table for variety has 2 degrees of freedom, and the associated p-value is a measure of evidence against the hypothesis that both parameters are 0 (no variety effect).
+Notice that $mean(fructose) = Parameter 1 + Parameter(fructose)$, 
+$mean(glucose) = Parameter 1 + Parameter(glucose)$, etc. 
+
+When there are no differences amongst the varieties, then Parameters 2 - 5 = 0. The ANOVA table for variety has 4 degrees of freedom, and the associated p-value is a measure of evidence against the hypothesis that these 4 parameters are 0 (i.e. no treatment effect).
 
 What are the model parameter estimates in the Wheat Variety experiment?
 
-```{r summary_wheat}
-wheat <- read.csv("../Data/wheat yield PLUS.csv")
-wheat$Variety <- factor(wheat$Variety, levels = c("Standard", "New","NewPLUS"))
-model.wheat <- lm(Yield ~ Variety, data = wheat)
-summary(model.wheat)
+```{r summary_pea}
+pea <- read_csv("../Data/pea data.csv")
+str(pea)
+model.pea <- lm(length ~ sugar, data = pea)
+summary(model.pea)
 ```
 
-### More exercises: 
+### More questions: 
 
-(2) For the wheat variety experiment, compare the model parameter estimates with the mean estimates obtained from the **emmeans** function.
+Compare the model parameter estimates with the mean estimates obtained from the **emmeans** function.
+```{r emmeans_pea}
+emmeans(model.pea, ~sugar)
+```
 
-(3) Peas were grown under 5 different growth media which differed in the type of sugar used. The different types of sugar (including a no sugar control) were:  control, glucose, fructose, g&f and sucrose. The experimenter recorded the lengths of pea sections. Ten pea section lengths were recorded per treatment. 
 
-    (a) fit a model to these data, and report your assessment of how growth media affects pea length.
-  
-    (b) How many parameters in this model? Which is the reference group for this experiment? Use the summary function to obtain the parameter estimates. 
-  
-    (c) What is the relationship between the model parameters and the treatment means?
-    
-    (d) Examine the residual plots? What can you say about the within group variation across the 5 groups?
   
 ## A model for associations between continuous variables
 
@@ -128,7 +125,7 @@ In this glasshouse experiment, researchers grew legumes under 6 different soil n
 ### Import data
 
 ```{r legume_nitrate}
-legume<-read.csv("../Data/legume nitrate experiment.csv")
+legume<-read_csv("../Data/legume nitrate experiment.csv")
 str(legume)
 ```
 
@@ -140,7 +137,7 @@ ggplot(legume, aes(x=log10(nitrate), y=RMR))+ geom_beeswarm()
 ggplot(legume, aes(x=log10(nitrate), y= log_RMR))+ geom_beeswarm()
 ```
 
-We consider our model assumptions that the data should be normally distributed around its mean. The RMR distribution is clearly non-normal; it has long tails. On the other hand, the log(RMR) distribution looks more "normal". This is a relatively common phenomenon with biological data, and visualising the data before modelling it will help us choose the most appropriate model.
+We consider our model assumptions that the data should be normally distributed around its mean. The RMR distribution is clearly non-normal; it has long tails. On the other hand, the log(RMR) distribution looks more "normal". This is a relatively common phenomenon with biological data, and visualising the data before modelling it will help us choose a reasonable model.
 
 We have a couple of options regarded how we include nitrate in the model. On the one hand, we have 6 treatments, so nitrate can be a *factor* with 6 levels. On the other hand, we anticipate a dose-response relationship, with decreasing RMR for increasing log(nitrate concentration).
 
@@ -171,7 +168,7 @@ Following our standard workflow, we assess our model assumptions with residual p
 par(mfrow=c(2,2))
 plot(model.legume)
 ```
-### Summarise model using graphic
+### Summarise model graphically
 
 A summary of the model can be shown together with the data. We need something equivalent to means and standard errors. Instead of the emmeans() function, we'll use the predict() function to get estimated mean log_RMR for a range of nitrate concentrations. The predict() function includes an option for 95% confidence intervals around the estimated means. The confidence interval is mean +- 1.96*SE.
 ```{r model_summary}
@@ -194,18 +191,19 @@ ggplot(legume, aes(x=log10(nitrate), y=log_RMR))+
 
 ## Exercises
 
-(1) A clinical research group has collected data on breast density in adult women. They are  interested in the relationship between breast density and age and body mass index. Is there a loss of breast density as women age? Does BMI have an impact on breast density? These data are in Breast cancer density.csv. 
+(1) A plant group at ANU conducted a pilot study to assess whether C3 and C4 plants differ in dark respiration. They selected a range of C3 and C4 plants (90 per group) and measured dark respiration. Set up a workflow to conduct a statistical analysis of their experiment (dark_resp in C3C4.csv). (2 points)
+
+(2) A field experiment conducted at CSIRO compared wheat yields of a standard variety, a new variety, and third (New PLUS) variety. They used a large block with 150 plots, and randomly assigned a variety to each plot. Wheat yield was measured in tonnes/hectare. Set up a workflow to conduct a statistical analysis of their experiment (wheat yield PLUS.csv) (2 points)
+
+(3) A clinical research group has collected data on breast density in adult women. They are  interested in the relationship between breast density and age and body mass index. Is there a loss of breast density as women age? Does BMI have an impact on breast density? (Breast cancer density.csv) 
 
 Set up a workflow to address these questions. 
 
 *hint:* To help you to visualise these associations in ggplot(), you can use the geom_smooth() function. 
 
-How many parameters in the model: density ~ AGE?
-What can you infer from fitting this model?
-Comment on the residual plots for the model density~AGE.
+(a) How many parameters in the model: density ~ AGE? What can you infer from fitting this model?
+Comment on the residual plots for the model density~AGE. (1 point)
 
-Same questions for the model: density ~ BMI.
+(b) Same questions for the model: density ~ BMI. (1 point)
 
-Consider the model:  density ~ AGE + BMI. 
-What can you infer from fitting this model?
-Interpret the parameter estimates.
+(c) Consider the model:  density ~ AGE + BMI. How might you visualise these data?  What can you infer from fitting this model? Interpret the parameter estimates. (1 point)
