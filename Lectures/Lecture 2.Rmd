@@ -49,6 +49,7 @@ header-includes:
 
 * Normal distribution
    * family of distributions
+   * sample space $(-\infty, \infty)$
    * defined by two parameters: mean and standard deviation (variance)
    * many biological measures normally distributed, e.g. height, weight
 
@@ -81,6 +82,8 @@ ggplot(out_normal, aes(x=outcomes,y = rel_freq))+
    * defined by two parameters: 
       * n = # of independent trials
       * p = probability of success in a trial
+      
+   * sample space ${0, 1, ..., n}$
 
 ## Sample from a binomial distribution
 
@@ -95,16 +98,32 @@ ggplot(sample_binomial, aes(x = x))+
 ```{r, message=FALSE, fig.height=1.5, fig.width=2, fig.align = 'center'}
 outcomes<-seq(71,100, by=1)
 outcomes_binomial <- tibble(outcomes = outcomes, 
-                            prob = dbinom(outcomes, size=100, prob=0.95))
+                     prob = dbinom(outcomes, size=100, prob=0.95))
 ggplot(outcomes_binomial, aes(x=outcomes,y = prob))+
    geom_bar(stat="identity")
 ```
 
 ## Sampling from a distribution: A data-generating machine
 
+```{r normal_machine,fig.height=3, fig.width=4, fig.align = 'center', echo=FALSE, warning=FALSE}
+library(ggforce)
+dat = data.frame(x0=c(.25,.25,.60), y0=c(.25,.55,.25), r=.1)
+ggplot() + scale_x_continuous(limits = c(0,1)) +
+  scale_y_continuous(limits = c(0,1))+
+  geom_circle(aes(x0=x0, y0=y0,r=r),data=dat)+
+  annotate("rect", xmin = .15, xmax = .35, ymin = .15, ymax = .35,
+           alpha = .2, fill="blue", colour= "black")+
+  geom_segment(aes(x=.25, y=.45, xend=.25, yend=.35), 
+               arrow=arrow(), size=1, color="blue")+
+  geom_segment(aes(x=.5, y=.25, xend=.35, yend=.25), 
+               arrow=arrow(), size=1, color="blue")+
+  annotate("text", x=.25, y=.25, label="Y[{i}]", parse = TRUE,size=5)+
+  annotate("text", x=.6, y=.25, label="\u03c3 (SD)", size=3)+
+  annotate("text", x=.25, y=.55, label="\u03BC (mean)", size=3)+
+  #ggtitle("Graphical model for normal distribution") +
+  theme_void()
 
-(Graphical description of data generating machine - rnorm)
-(AR(1) process)
+```
 
 Now let's look at this from the other end. Using data, can we build a machine
 that may have generated our data?
@@ -118,6 +137,9 @@ yield_dat<-tibble(annual_rain = annual_rain, yield=yield)
 ggplot(yield_dat, aes(annual_rain, yield))+geom_point()
 ```
 
+## Draw a picture of Machine 1
+
+
 ## Machine 2: Precipitation -> Yield, AR process
 ```{r}
 set.seed(202073)
@@ -129,6 +151,9 @@ for (i in 2:50) {
 }
 yield_dat2<-tibble(year = 1951:2000, rain = annual_rain, yield=yield)
 ```
+
+## Draw a picture of Machine 2
+
 
 ## Machine 2: Precipitation -> Yield, AR process
 ### Annual rain between 1951 and 2000
