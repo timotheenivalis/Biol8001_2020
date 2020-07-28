@@ -53,7 +53,7 @@ Most of the data sets we'll use are in .csv format. It's possible to import data
 You'll need to provide the full path name of the file, so that read.csv can find the data file. If your .R file is in the main directory, and the data are stored in the Data/ directory, then the path name is "Data/seed orchard data.csv". 
 
 ```{r import}
-seed <- read.csv("../Data/seed orchard data.csv")
+seed <- read_csv("../Data/seed orchard data.csv")
 str(seed)
 ```
 
@@ -164,8 +164,5 @@ ggplot(results1, aes(x=seedlot, y=emmean, fill = seedlot))+
   theme_classic()
 ```
 
-## Exercises:
 
-(1) A plant group at ANU conducted a pilot study to assess whether C3 and C4 plants differ in dark respiration. They selected a range of C3 and C4 plants (90 per group) and measured dark respiration. Set up a workflow to conduct a statistical analysis of their experiment (dark_resp in C3C4.csv). 
 
-(2) A field experiment conducted at CSIRO compared wheat yields of a standard variety, a new variety, and third (New PLUS) variety. They used a large block with 150 plots, and randomly assigned a variety to each plot. Wheat yield was measured in tonnes/hectare. Set up a workflow to conduct a statistical analysis of their experiment ( wheat yield PLUS.csv)
