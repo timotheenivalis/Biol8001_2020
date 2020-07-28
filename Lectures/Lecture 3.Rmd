@@ -78,7 +78,7 @@ One can fit a model to **predict** outcomes.
 * All mice challenged with Shigella bacteria at Day 14
 * Outcome: 7-day average symptom score post-challenge
 
-This time, 3 mice per cage (one per treatment), and 6 cages total.
+This time, 6 mice per cage (two per treatment), and 6 cages total.
 
 * Potential *factors* influencing score: cage (6) and treatment (3)
 * Can estimate *cage effects* (score differences between cages)
@@ -88,6 +88,18 @@ This time, 3 mice per cage (one per treatment), and 6 cages total.
 ### Proposed data generating process
 ```{r echo = FALSE, fig.align='center'}
 knitr::include_graphics("../images/Lecture3_gm_vaccine.png")
+```
+
+## Example 1: Shigella vaccine challenge experiment
+### Separating "signal" and "noise": Analysis of Variance
+```{r setup, message=FALSE, echo=FALSE}
+library(tidyverse)
+vaccine<-read_csv("../Data/vaccine study.csv")
+```
+
+```{r vaccine_anova, message = FALSE}
+model_vaccine<- lm(Score~Treatment+factor(cageID), data=vaccine)
+anova(model_vaccine)
 ```
 
 ## Example 2: Drought resistance in GM tomato plants 
@@ -106,9 +118,19 @@ knitr::include_graphics("../images/Lecture3_gm_vaccine.png")
 knitr::include_graphics("../images/Lecture3_drought.png")
 ```
 
+## Example 2: Drought resistance in GM tomato plants 
+### Separating "signal" and "noise": Analysis of Variance
+```{r setup_drought, echo=FALSE, message = FALSE}
+drought<-read_csv("../Data/drought data.csv")
+```
+\small
+```{r drought_anova, message=FALSE}
+model_drought<- lm(Temperature~Genotype*WaterCondition, data=drought)
+anova(model_drought)
+```
 ## Example 3: Diet and obesity
 ### Are NODk mice more susceptible to obesity with a high fat diet?
-
+\normalsize
 ```{r echo = FALSE}
 library(ggplot2)
 mice<- read.csv("../Data/diet and diabetic mice.csv")
@@ -134,10 +156,22 @@ ggplot(mice, aes(x=Age, y=Wt, group = MouseID, colour=Diet))+
 ```{r echo=FALSE, fig.align = 'center'}
 knitr::include_graphics("../images/Lecture3_diet.png")
 ```
+## Example 3: Diet and obesity
+```{r library, echo=FALSE, message=FALSE}
+library(lmerTest)
+```
+\small
+```{r mice_anova, message=FALSE}
+model_mice<-lmer(Wt~Age*Diet*Strain + (1|MouseID), data=mice)
+anova(model_mice)
+```
+
 ## Summary
 
 * Statistical models: conceptualisation of experiment
-* 
+* Statistical model comprised of signal and noise
+* Signal (pattern): estimates of treatment effects and interactions
+* Fitting Statistical model: make inferences about treatment effects/interactions
 
 :::block
 ### In the next workshop, we'll fit models to data using R
