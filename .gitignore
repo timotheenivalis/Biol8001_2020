@@ -30,3 +30,6 @@ vignettes/*.pdf
 .DS_Store
 # tex files
 *.tex
+Assignments
+Biol8001_2020.Rproj
+Graphical models2.R
