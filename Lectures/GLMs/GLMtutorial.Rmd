@@ -1,8 +1,8 @@
 ---
-title: "Introduction to Generalized Linear Models"
-subtitle: "Binary and count data"
+title: "Generalized Linear Models"
+subtitle: "Introduction and binary data"
 author: "Timothee Bonnet"
-date: "16 July 2020"
+date: "3 September 2020"
 output: 
   html_document:
     theme: united
@@ -18,29 +18,28 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-Today:
+Goals for today:
 
-* Understand why linear models do not work well with some type of data (e.g., binary data)
-* Fit generalized linear models (GLMs), in particular binomial (a.k.a., logistic regression)
-* Interpret and visualize binomial GLMs
+* Understand why linear models do not work well with some types of data (e.g., binary data)
+* Fit generalized linear models (GLMs), in particular binary binomial (a.k.a., logistic regression)
+* Visualize binomial GLMs
 
+Tomorrow:
 
-First, let's download some data to play with:
-```{r, cache=TRUE}
+* Understand the structure and components of GLMs
+* Interpret and create model predictions from binary GLMs
+* Practice analyses workflow with binary GLMs
+* Understand the pitfall of quasi-complete separation
 
-download.file("https://timotheenivalis.github.io/data/survivalweight.csv", 
-              destfile = "Data/survivalweight.csv")
+Why binary GLMs? Because these are the simplest of all GLMs. Not too much can go wrong with them. In week 7 we will work with other types of GLMs for which we will need to learn some more concepts and be more careful with assumptions.
 
-download.file("https://timotheenivalis.github.io/data/voles.csv", 
-              destfile = "Data/voles.csv")
-
-```
-
-We will need the following packages:
+Today we will need the following packages:
 ```{r, message=FALSE}
 library(ggplot2)
+library(ggbeeswarm)
+library(ggResidpanel)
+
 library(tidyverse)
-library(performance)
 library(glmmTMB)
 ```
 
@@ -51,93 +50,77 @@ library(glmmTMB)
 
 First, let us look at an example when a linear model performs fine.
 We simulate data following all the assumptions of a linear model with equation
+
 $$
 y_i = \alpha + \beta x_i + \epsilon_i \text{, with } \epsilon \sim N(0, \sigma_\epsilon)
 $$
-
+First, we choose parameter values for the equation:
 ```{r}
-set.seed(123)
-x <- rnorm(20)
-y <- 1 + x + rnorm(20)
+number_observations <- 20
+alpha <- 1
+beta <- 0.5
+sigma_epsilon <- 1
+```
+
+Then we draw random numbers for the predictor $x$ (for which we don't have an equation, so we could do whatever) and for the response $y$ according to the equation:
+```{r}
+set.seed(934)
+
+x <- rnorm(n = number_observations, mean = 0, sd = 1)
+
+y <- alpha + beta*x + rnorm(n = number_observations,mean = 0, sd = sigma_epsilon)
+
 data_linear <- tibble(x=x, y=y)
 ```
 
 Let us visualize these data
 ```{r}
-ggplot(data_linear, aes(x=x, y=y))+
-  geom_point()
+(p <- ggplot(data_linear, aes(x=x, y=y))+
+  geom_point())
 ```
 
-We fit a simple linear model and visualise it:
+We fit a simple linear model and visualise the model prediciton:
 ```{r}
 lm0 <- lm(y~x, data = data_linear)
 summary(lm0)
 
-ggplot(data_linear, aes(x=x, y=y))+
-  geom_point() + 
-  geom_smooth(method="lm") +
-  geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
+(p <- p + geom_smooth(method="lm"))
+```
+
+Next we draw the residuals:
+```{r}
+p + geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
+```
+
+Residuals look mostly unstructured, random and normally distributed. We can better assess these properties using diagnostic plots showing different properties of the residuals:
+
+```{r}
+resid_panel(lm0)
 ```
 
 Diagnostic plots may not look very good, but there is actually no serious violation of assumptions.
-```{r}
-check_model(lm0)
-```
+That looks like an acceptable linear model.
 
-
-#### BONUS:
-
-What happens inside `geom_smooth()`? Let's do it "by hand" with `predict()`:
-
-```{r}
-newdata <- tibble(x=seq(min(data_linear$x), max(data_linear$x), length.out = 100))
-predictions <- predict(lm0, newdata = newdata, se.fit = TRUE)
-newdata$y <- predictions$fit
-newdata$lowCI <- predictions$fit - 1.96*predictions$se.fit
-newdata$uppCI <- predictions$fit + 1.96*predictions$se.fit
-
-
-ggplot(data_linear, aes(x=x, y=y))+
-  geom_point() +
-  geom_line(data = newdata, color="blue") +
-  geom_ribbon(data = newdata, aes(x=x, ymin=lowCI, ymax=uppCI),
-              inherit.aes = FALSE, fill="blue", alpha=0.2) +
-  geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
-
-```
-
-Bonus bonus! What happens inside `predict()`?
-
-```{r}
-newdata2 <- tibble(x=seq(min(data_linear$x), max(data_linear$x), length.out = 100),
-                  y=0)
-
-# The code below reproduces the result of predict(..., se.fit=TRUE)
-mm <- model.matrix(terms(lm0),newdata2)
-newdata2$y <- as.vector(mm %*% lm0$coefficients)
-pvar1 <- diag(mm %*% tcrossprod(vcov(lm0),mm))
-newdata2 <- tibble(
-  newdata2,
-  lowCI2 = newdata2$y-1.96*sqrt(pvar1),
-  uppCI2 = newdata2$y+1.96*sqrt(pvar1)
-) 
-
-```
-The key to compute confidence intervals is `vcov()`, which extracts the variance-covariance matrix of the uncertainty in parameters; the rest is mostly matrix multiplication.
 
 ### When a linear model fails
 
-Now let's generate data with the same structure, except we convert the continuous values to binary values, following a logistic transformation and a Bernouilli distribution. For this type of data we generally want to model the probability of a 1 (survival, presence, success...). Data can be either 0 or 1. Although we cannot observe it in the data, we can interpret a value between 0 and 1 (e.g., 0.5): it is a probability. On the other hand, values below 0 or above 1 are meaningless for a binary variable.
+Now let's generate data with the same structure, except we convert the continuous values to binary values, following a logistic transformation and a Bernouilli distribution. For this type of data we generally want to model the probability of a 1 (survival, presence, success...). Data can be either 0 or 1. Although we cannot observe values between 0 and 1 (e.g., 0.5) in the data, we can interpret such a value: it is a probability (of observing a 1). On the other hand, values below 0 or above 1 are meaningless for a binary variable.
 
 ```{r}
-set.seed(123)
-x <- rnorm(30)
-latent <- 1 + 2*x + rnorm(30, sd = 0.5)
-y <- plogis(latent)
-obs <- sapply(y, FUN=function(x){rbinom(1,1,x)})
-data_binary <- tibble(x=x, y=obs)
+set.seed(934)
+number_observations <- 30
+alpha <- 1
+beta <- 2
+sigma_epsilon <- 0.5
 
-ggplot(data_binary, aes(x=x, y=y))+ geom_point()
+x <- rnorm(n = number_observations,mean = 0,sd = 1)
+latent <- alpha + beta*x + rnorm(n = number_observations,mean = 0,sd = sigma_epsilon)
+proba <- plogis(latent)
+y <- sapply(proba, FUN=function(x){rbinom(1,1,x)})
+
+data_binary <- tibble(x=x, y=y)
+
+ggplot(data_binary, aes(x=x, y=y))+ geom_beeswarm(groupOnX = FALSE)
 ```
 
 Let's fit a linear regression to these data and visualise the result.
@@ -146,234 +129,108 @@ lm1 <- lm(y~x, data = data_binary)
 summary(lm1)
 
 ggplot(data_binary, aes(x=x, y=y))+
-geom_smooth(method="lm", fullrange=TRUE) + geom_point() +
+geom_smooth(method="lm", fullrange=TRUE) + geom_point(alpha=0.5) +
 geom_segment(aes(x=x, y=y, xend= x, yend=lm1$fitted.values), alpha=0.4) +
-  xlim(c(-3,2))
+  xlim(c(-3,1.2))
 ```
 
 Several problems are apparent:
 
-* The regression line (in blue) goes below zero and above 1.
+* The regression line (in blue) goes below 0 and above 1.
+* The uncertainty (confidence interval in grey) gets larger for extreme values of $x$, while it seems like we are pretty sure there will be only 0s below $x=-2$ and only 1s above $x=1$, the uncertainty should be smaller on the sides!
+* Residuals are not independent of each others (they are more or less ranked from left to right) and their variation is not constant (from left to right the variation is small, then big, then small).
 
-
+In addition, if we look at the diagnostic plots:
 ```{r}
-check_model(lm1)
+resid_panel(lm1)
 ```
 
-## Fit GLM for binary data: "binomial" family
+* We see bands in the first plot: residuals are not independent of each others.
+* The QQplot and the histogram show signs of non-normality (althought that is not a big problem! Linear models are pretty robust to non-normality)
 
+*That is not a good linear model. Inference from such a model is unreliable. In particular you should not trust any measure of uncertainty (Standard Error, Confidence Interval, p-value).*
+
+## The solution: fit GLM for binary data, the binomial family
+
+Instead of a linear model, here we need to use a *Generalized Linear Model* (GLM). GLMs come in different flavours or *families*, each adapted to different types of response variables. Here we will talk about GLMs for binary data, which belong to the *binomial family*.
+
+Before discussing what a GLM is in details, let's see that it is very easy to fit one in R. For now we can use the function `glm()`, which works exactly like `lm()`, except that you need to specify a family:
 
 ```{r}
 glm1 <- glm(y~x, data = data_binary, family = "binomial")
-
-ggplot(data_binary, aes(x=x, y=y))+
-geom_smooth(method="glm", method.args = list(family="binomial"), fullrange=TRUE) + geom_point() +
-geom_segment(aes(x=x, y=y, xend= x, yend=glm1$fitted.values)) +
-  xlim(c(-3,2))
-
-```
-
-For binary binomial glms there are no assumptions about the distribution of residuals, apart from the independence of the data generating process.
-Diagnostic plots are not really useful; they look ugly but that's fine, because they are assessing linear model's assumptions, not glm's.
-```{r}
-plot(glm1)
-check_model(glm1)
-
-```
-
-
-How to interpret results?
-```{r}
 summary(glm1)
-
-coef(glm1)[1] + coef(glm1)[2]*data_binary$x
-
-predict(glm1)
-
-data_binary$latent_y <- predict(glm1)
 ```
 
-Visualise data (black) vs. what is predicted by regression coefficients:
+The `summary` output looks very similar to that of `lm()`. From a quick look we see that $x$ has a positive effect on $y$, as expected.
+
+ANOVAs are difficult with GLMs, but we can still have a look to confirm that there is good evidence that $x$ has an effect on $y$. We just need to specify `test = LRT` or `test=Chisq`.
 ```{r}
-ggplot(data_binary, aes(x=x, y=y))+ geom_point(color="black")+
-  geom_point(inherit.aes = FALSE, aes(x=x, y=latent_y), color="red")
-```
-
-The difference is because regression coefficients of a glm are expressed on a different scale.
-
-To go from the data to the regression scale we apply a logit transform:
-
-$$
-\mathrm{logit}(y) = \log(\frac{y}{1-y})
-$$
-
-To go from model predictions on the regression scale to the data scale we apply the inverse tranformation, which is
-$$
-\mathrm{logit}^{-1}(y) = \frac{1}{1+e^{-y}}
-$$
-in R you can run this inverse logit function with plogis:
-
-```{r}
-plogis(0)
-1/(1+exp(-0))
-
-plogis(0.98)
-1/(1+exp(-0.98))
-
-plogis(-0.98)
-1/(1+exp(--0.98))
-```
-
-We can better understand what the model says after the plogis transformation:
-```{r}
-data_binary$transformed_latent_y <- plogis(predict(glm1))
-
-ggplot(data_binary, aes(x=x, y=y))+ geom_point(color="black")+
-  geom_point(inherit.aes = FALSE, aes(x=x, y=transformed_latent_y), color="red")
+anova(glm1, test = "LRT")
 ```
 
 
-The model predictions obtained from the regression parameters are probabilities to observe 1 rather than a 0.
-
-How does the model relate model predictions to the data?
-The Bernouilli distribution, rbinom(n=, size= 1, prob=), a special case of the binomial distribution with size=1.
-
+Let's see what the model prediction looks like:
 ```{r}
-rbinom(n = 100, size = 1, prob = 0.9)
-
-sapply(data_binary$transformed_latent_y, 
-       function(x) rbinom(n = 10, size = 1, prob = x))
+(p <- ggplot(data_binary, aes(x=x, y=y))+
+  geom_smooth(method="glm", method.args = list(family="binomial"), fullrange=TRUE) +
+  geom_point())
 ```
 
+That looks good!
 
+What happens to the prediction when we extrapolate beyond the range of $x$ values?
+```{r}
+p + xlim(-10,10)
+```
 
-From this example, we saw what a GLM is:
+Two very good points:
 
-1. A linear function (reponse = intercept + slope × predictor . . . ), what you see with summary(glm1)
-2. A "Link function"" = a map between the linear function (−∞ to +∞) and a
-probability distribution (from 0 to 1 for Bernouilli)
-3. Probability distribution (Bernouilli, Binomial, Poisson. . . ) assumed to generate
-the data (either 0 or 1 for Bernouilli)
+1. The prediction line never goes below 0 or above 1
+2. The uncertainty shrinks as we get to more extreme values of $x$
 
-### Practice 
+Two of the three problems we saw with `lm()` are fixed. What about the third one, the distribution of residuals?
 
 ```{r}
-survdat <- read.csv("../Data/survivalweight.csv")
+p + geom_segment(aes(x=x, y=y, xend=x, yend=fitted(glm1)))
+```
 
+```{r}
+resid_panel(glm1)
+```
+
+The residuals do not look much better with the `glm()` than with the `lm()`. But that is okay! GLMs do not have the same assumptions as LMs. In fact, for binary binomial GLMs there are very few assumptions. The only one you need to remember for now is the absence of pseudo-replication, that is, observations are assumed to be independent of each other conditional on predictors, or again in different words, your model should not leave important blocking factors unaccounted for. 
+When working with GLMs, you do not need to use `resid_panel()`, and for today we will not need any quantitative assessments of assumptions. We will use other functions to assess assumptions when they become important in later sessions.
+
+### Practice with real data
+
+To get a bit ahead of tomorrow content we can start acquainting ourselves with some real data. 
+The data set "voles.csv" contains records from the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival.
+
+Let's consider the relationship between mass and survival.
+
+```{r}
+survdat <- read.csv("../../Data/voles.csv")
 str(survdat)
 
+ggplot(survdat, aes(x = mass, y=survival)) +
+  geom_point(alpha=0.2)
 ```
 
-1. Model effect of weight
-```{r}
-ggplot(survdat, aes(x=weight, y=survival)) +
-   geom_jitter(width = 0.0, height = 0.02)  +
-  geom_smooth(method = "glm", method.args = list(family="binomial"))
+Difficult to see much on this plot. Better to add some jitter/beeswarm and a glm fit:
 
-mw <- glm(survival ~ weight, data=survdat, family = "binomial")
-summary(mw)
-
-```
-
-What probability of survival does the model predict for a weigth of 30?
-```{r}
-plogis(coef(mw)[1] + coef(mw)[2]*30)
-
-ggplot(survdat, aes(x=weight, y=survival)) +
-   geom_jitter(width = 0.0, height = 0.02)  +
-  geom_smooth(method = "glm", method.args = list(family="binomial"))+
-  geom_point(x=30, y=plogis(coef(mw)[1] + coef(mw)[2]*30), color="red")
-
-```
-
-2. Model effect of Sex
-```{r}
-
-ggplot(survdat, aes(x=sex, y=survival)) +
-  geom_jitter(width = 0.1, height = 0.02) 
-
-msex <- glm(survival ~ sex, data=survdat, family = "binomial")
-summary(msex)
-
-plogis(coef(msex)[1]) #female prediction
-plogis(coef(msex)[1]+coef(msex)[2]) #male prediction
-
-# automated calculation with predict:
-newdat <- data.frame(sex=c("Female", "Male")) 
-(newdat$pred <- predict(object = msex, newdata = newdat, type = "response"))
-
-ggplot(survdat, aes(x=sex, y=survival)) +
-  geom_jitter(width = 0.1, height = 0.02) +
-  geom_point(data = newdat, aes(x=sex, y=pred, color=sex))
-
-# Adding SE (approximate CI)
-newdat <- data.frame(sex=c("Female", "Male")) 
-predobj <- predict(object = msex, newdata = newdat,
-                        type = "response", se.fit=TRUE)
-newdat$pred <- predobj$fit
-newdat$SE <- predobj$se.fit
-newdat$lowci <- newdat$pred -1.96*newdat$SE
-newdat$upci <- newdat$pred +1.96*newdat$SE
-
-ggplot(survdat, aes(x=sex, y=survival)) +
-  geom_jitter(width = 0.1, height = 0.02) +
-  geom_point(data = newdat, aes(x=sex, y=pred, color=sex))+
-  geom_errorbar(inherit.aes = FALSE,
-                data = newdat, aes(x=sex, ymin=lowci, ymax=upci, color=sex), width=0.2)
-```
-
-
-3. Interaction weight:Sex?
-```{r}
-ggplot(survdat, aes(x=weight, y=survival, color=sex)) +
-  geom_point() + geom_smooth(method = "glm", method.args = list(family="binomial"))
-
-msw <- glm(survival ~ sex*weight, data=survdat, family = "binomial")
-summary(msw)
-```
-
-4. Draw prediction and CI for low and heigh weight for case of intercation.
-
-You must first calculate CI, then back-transform (i.e., apply plogis), or the CI goes below 0 or above 1. 
-In a GLM CIs are asymetrical. 
 
 ```{r}
-newdat <- expand.grid(sex=c("Female", "Male"), weight=c(18,40)) 
+ggplot(survdat, aes(x = mass, y=survival)) +
+  geom_beeswarm(groupOnX = FALSE) + 
+  geom_smooth(method = "glm", method.args=list(family="binomial"))
 
-# this is inexact:
-predobj <- predict(object = msw, newdata = newdat,
-                        type = "response", se.fit=TRUE)
-newdat$pred <- predobj$fit
-newdat$SE <- predobj$se.fit
-newdat$lowci <- newdat$pred -1.96*newdat$SE
-newdat$upci <- newdat$pred +1.96*newdat$SE
-newdat # some values beyond 0 / 1
 ```
-
-The correct way:
-```{r}
-predobj <- predict(object = msw, newdata = newdat,
-                        type = "link", se.fit=TRUE)
-newdat$pred <- plogis(predobj$fit)
-newdat$lowci <- plogis(predobj$fit -1.96*predobj$se.fit)
-newdat$upci <- plogis(predobj$fit +1.96*predobj$se.fit)
-newdat
-
-ggplot(survdat, aes(x=weight, y=survival, color=sex)) +
-  geom_point(alpha=0.1) + geom_smooth(method = "glm", method.args = list(family="binomial"))+
-  geom_point(data=newdat, aes(x=weight, color=sex, y=pred), size=2, alpha=0.5)+
-geom_errorbar(data=newdat,  inherit.aes = FALSE,
-              aes(x=weight, color=sex, ymin=lowci, ymax=upci), width=1)
-```
-
-
-
-## More practice
-
-Explain variation in annual survival in the vole data set.
 
 ```{r}
-voles <- read.csv("../Data/voles.csv")
-head(voles)
+vole_glm <- glm(survival ~ mass, data = survdat)
+summary(vole_glm)
+
 ```
+
+So it looks like higher body mass correlates with lower survival. Do you trust this result?
 
