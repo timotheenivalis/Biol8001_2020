@@ -1,0 +1,120 @@
+---
+title: "Lecture 2 Statistical Inference"
+author: "T. Neeman"
+date: "08/07/2020"
+output: html_document
+---
+
+## The Big Picture: Learning from Data
+
+Anyone who studies biology recognises that the world is not deterministic. As scientists, we make observations, collect data and we try to learn from these data. Learning means recognising patterns.  We run experiments, where we manipulate environmental factors, and then assess if our manipulations had consequences. But even with the best lab technicians, data are invariably noisy and may obscure the patterns we hope to see.  
+
+Statistics is a tool that can help us learn about the world from data, by putting the experiment or observational survey into a probabilistic framework. 
+ 
+By a probabilistic framework, I mean a data generating process or statistical model. Like our examples in Lecture 2, data generating processes have two components: a functional component that describes mathematical relationships between experimental factors and responses, and a random component that describes the probabilistic component (expected variation or uncertainty). 
+
+The data generating process that we ascribe to the data may not be the “true” model. It’s impossible to know that true generating process. But we hope that it will be a useful model. Useful: it generates data that is consistent with our past, present and future observations.
+
+So the challenge in statistics is to nominate a data generating process that is consistent with our observations. Here are some desirable properties:
+
+* Our model should NOT be too complicated; or overly specific about the ad hoc parts of our data. It should be generalise our observations.
+
+* Our model should not be overly simple; it should inform us about the main patterns in the data.
+
+You can imagine that starting from data and inferring the data generating process is a task fraught with difficulties. In some sense, we never KNOW anything for certain; we can at best make educated guesses. Statistics allows us to quantify our uncertainty using probability theory. Statisticians develop methodologies and algorithms to help us make these educated guesses.
+
+## Permutation tests
+### An algorithm for assessing group differences 
+A field trial was planted to compare a seed lot (i.e. a batch of seeds) derived from a seed orchard (SO) with one collected from a routine plantation (P). Eight plots were planted for each seed lot, and these were thinned when the young trees were seven years of age. Tree diameters at breast height (dbh) were measured at 15 years.
+
+Let’s import and visualise the data
+```{r} 
+library(tidyverse)
+seed<- read_csv("../Data/seed orchard data.csv")
+str(seed)
+ggplot(seed, aes(x=seedlot, y=dbh, colour=seedlot)) +
+    geom_boxplot()
+```
+Let’s calculate the difference in mean dbh:
+```{r}
+SO <-seed$seedlot == "SO"
+mean_diff <- mean(seed$dbh[SO]) - mean(seed$dbh[!SO])
+```
+
+Statistical inference is a principled way of offering evidence in favour of a hypothesis. We consider two competing models. Model I: Tree diameter at breast height (dbh) is independent of the seed batch type, and Model II: Tree diameter at breast height (dbh) depends upon seed batch type. We are looking for evidence in favour of Model II, or equivalently evidence against Model 1. 
+
+If tree diameter is independent of seed batch, then re-assigning the seed batch type to a tree and computing the mean difference in diameter between groups should give us a mean difference similar to the observed mean difference. 
+
+Here is the permutation test algorithm:
+
+1.	compute the group mean difference from the data (observed statistic). 
+2.	randomly re-assign seed batch labels to each tree and re-compute group mean difference.
+3.	Repeat Step 2 1,000 times.
+4.	Plot histogram of 1,000 +1 mean differences, and assess how consistent the observed statistic is relative to the distribution of the 1,000 values.
+```{r, message = FALSE}
+n<-1000
+diff2 <- rep(0,n)
+for (i in 1:n) {
+  seed_assign<-sample(seed$seedlot, size = nrow(seed))
+  SO <-seed_assign == "SO"
+  diff2[i]<-mean(seed$dbh[SO]) - mean(seed$dbh[!SO])
+}
+
+dist_dat<-data.frame(status = c(1, rep(0,n)), dbh = c(mean_diff, diff2))
+ggplot(dist_dat, aes(x=dbh, fill = factor(status)))+
+  geom_histogram()
+```
+
+## Parametric Bootstrap
+### A general sampling algorithm
+
+Let's hypothesise that the tree diameter measurements from this experiment are random samples from a *single* normal distribution. We'll use the sample mean and the sample standard deviation as estimates of the true mean and standard deviation. We sample 16 diameters from this distribution, and assign  8 to "seed orchard" and 8 to "plantation", and compute the mean difference. If we repreat this process 1000 times, we'll get an idea of the distribution of possible mean differences, when the data generating process is the same for both groups. 
+
+Here is the parametric bootstrap algorithm:
+
+1.	Compute the group mean difference from the data (observed statistic). 
+2.	Take a random sample of 16 from a normal distribution with mean = overall sample mean, and standard deviation = overall sample standard deviation.
+3. Assign 8 samples at random to SO and P groups. Compute the difference in group means. 
+3.	Repeat Steps 2 & 3 1,000 times.
+4.	Plot histogram of 1,000 +1 mean differences, and assess how consistent the observed statistic is relative to the distribution of the 1,000 values.
+```{r bootstrap, message = FALSE}
+mean_all<-mean(seed$dbh); sd_all<-sd(seed$dbh)
+n<-1000
+diff2<-rep(0,n)
+for (i in 1:n) {
+  dbh<-rnorm(nrow(seed), mean=mean_all, sd = sd_all)
+  seed_assign<-sample(seed$seedlot, size = nrow(seed))
+  SO <-seed_assign == "SO"
+  diff2[i]<-mean(dbh[SO]) - mean(dbh[!SO])
+}
+
+dist_dat<-data.frame(status = c(1, rep(0,n)), dbh = c(mean_diff, diff2))
+ggplot(dist_dat, aes(x=dbh, fill = factor(status)))+
+  geom_histogram()
+```
+
+## Exercises: 
+
+1. In this pilot study of the effect of soil temperature on photosynthetic rate, researchers measured photosynthetic rate in 24 plants in a greenhouse experiment. For 24 plants, soil temperature was either elevated (temp=2) or normal (temp=1). (use photosynthesis.csv)
+
+(a) Import the data and draw a graphic to assess the research question. Calculate the observed mean difference in photosynthetic rate between the normal and elevated temperature (1 point).
+
+(b) Use a permutation test to assess the hypothesis that photosynthetic rate is independent of temperature.(1 point)
+
+(c) Repeat (a) using a parametric bootstrap. Compare your conclusions. (1 point)
+
+2. Eighty(80) patients with active ulcerative colitis (UC) were recruited and randomised in a 1:1 ratio to receive either infliximab or placebo. A total of 12 (30%) of the 40 patients assigned to placebo achieved a clinical response, compared with 20 (50%) of the 40 patients assigned to infliximab. (use uc_trial40.csv)
+
+(a) Confirm using a table or graphic the summary statistics presented above. Use a permutation test to assess the hypothesis that infliximab is no different to placebo in achieving a clinical response in UC patients. (use uc_trial40.csv) (1 point)
+
+(b) Suppose the 30% vs 50% response rates were achieved in a larger trial with 200 patients in each treatment group. Confirm using a table or graphic the summary findings. Repeat the permutation test, and assess the hypothesis of no difference. (use uc_trial200.csv) (1 point)
+
+
+
+3. Peas were grown under 5 different growth media which differed in the type of sugar used. The experimenter recorded the lengths of pea sections. Ten pea section lengths were recorded per treatment. She wants to assess whether growth media affects the mean section length.
+
+(a) Import the data, and visualise using ggplot. How would you assess the effect of growth media on pea length. (1 point)
+
+(b) Nominate a statistic for measuring the overall differences amongst treatment means. Consider a statistic that measures the deviation from the overall mean. (1 point)
+
+(c) Use a permutation test to assess the hypothesis that these growth media do not affect pea section length. What can you conclude? (Bonus question)
