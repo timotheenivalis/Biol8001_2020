@@ -1,0 +1,237 @@
+---
+title: "Generalized Linear Models"
+subtitle: "Introduction and binary data"
+author: "Timothee Bonnet"
+date: "3 September 2020"
+output: 
+  html_document:
+    theme: united
+    highlight: pygments
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Goals for today:
+
+* Understand why linear models do not work well with some types of data (e.g., binary data)
+* Fit generalized linear models (GLMs), in particular binary binomial (a.k.a., logistic regression)
+* Visualize binomial GLMs
+
+Tomorrow:
+
+* Understand the structure and components of GLMs
+* Interpret and create model predictions from binary GLMs
+* Practice analyses workflow with binary GLMs
+* Understand the pitfall of quasi-complete separation
+
+Why binary GLMs? Because these are the simplest of all GLMs. Not too much can go wrong with them. In week 7 we will work with other types of GLMs for which we will need to learn some more concepts and be more careful with assumptions.
+
+Today we will need the following packages:
+```{r, message=FALSE}
+library(ggplot2)
+library(ggbeeswarm)
+library(ggResidpanel)
+
+library(tidyverse)
+library(glmmTMB)
+```
+
+
+## Failure of linear models
+
+### What a linear model is supposed to do
+
+First, let us look at an example when a linear model performs fine.
+We simulate data following all the assumptions of a linear model with equation
+
+$$
+y_i = \alpha + \beta x_i + \epsilon_i \text{, with } \epsilon \sim N(0, \sigma_\epsilon)
+$$
+First, we choose parameter values for the equation:
+```{r}
+number_observations <- 20
+alpha <- 1
+beta <- 0.5
+sigma_epsilon <- 1
+```
+
+Then we draw random numbers for the predictor $x$ (for which we don't have an equation, so we could do whatever) and for the response $y$ according to the equation:
+```{r}
+set.seed(934)
+
+x <- rnorm(n = number_observations, mean = 0, sd = 1)
+
+y <- alpha + beta*x + rnorm(n = number_observations,mean = 0, sd = sigma_epsilon)
+
+data_linear <- tibble(x=x, y=y)
+```
+
+Let us visualize these data
+```{r}
+(p <- ggplot(data_linear, aes(x=x, y=y))+
+  geom_point())
+```
+
+We fit a simple linear model and visualise the model prediciton:
+```{r}
+lm0 <- lm(y~x, data = data_linear)
+summary(lm0)
+
+(p <- p + geom_smooth(method="lm"))
+```
+
+Next we draw the residuals:
+```{r}
+p + geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
+```
+
+Residuals look mostly unstructured, random and normally distributed. We can better assess these properties using diagnostic plots showing different properties of the residuals:
+
+```{r}
+resid_panel(lm0)
+```
+
+Diagnostic plots may not look very good, but there is actually no serious violation of assumptions.
+That looks like an acceptable linear model.
+
+
+### When a linear model fails
+
+Now let's generate data with the same structure, except we convert the continuous values to binary values, following a logistic transformation and a Bernouilli distribution. For this type of data we generally want to model the probability of a 1 (survival, presence, success...). Data can be either 0 or 1. Although we cannot observe values between 0 and 1 (e.g., 0.5) in the data, we can interpret such a value: it is a probability (of observing a 1). On the other hand, values below 0 or above 1 are meaningless for a binary variable.
+
+```{r}
+set.seed(934)
+number_observations <- 30
+alpha <- 1
+beta <- 2
+sigma_epsilon <- 0.5
+
+x <- rnorm(n = number_observations,mean = 0,sd = 1)
+latent <- alpha + beta*x + rnorm(n = number_observations,mean = 0,sd = sigma_epsilon)
+proba <- plogis(latent)
+y <- sapply(proba, FUN=function(x){rbinom(1,1,x)})
+
+data_binary <- tibble(x=x, y=y)
+
+ggplot(data_binary, aes(x=x, y=y))+ geom_beeswarm(groupOnX = FALSE)
+```
+
+Let's fit a linear regression to these data and visualise the result.
+```{r}
+lm1 <- lm(y~x, data = data_binary)
+summary(lm1)
+
+ggplot(data_binary, aes(x=x, y=y))+
+geom_smooth(method="lm", fullrange=TRUE) + geom_point(alpha=0.5) +
+geom_segment(aes(x=x, y=y, xend= x, yend=lm1$fitted.values), alpha=0.4) +
+  xlim(c(-3,1.2))
+```
+
+Several problems are apparent:
+
+* The regression line (in blue) goes below 0 and above 1.
+* The uncertainty (confidence interval in grey) gets larger for extreme values of $x$, while it seems like we are pretty sure there will be only 0s below $x=-2$ and only 1s above $x=1$, the uncertainty should be smaller on the sides!
+* Residuals are not independent of each others (they are more or less ranked from left to right) and their variation is not constant (from left to right the variation is small, then big, then small).
+
+In addition, if we look at the diagnostic plots:
+```{r}
+resid_panel(lm1)
+```
+
+* We see bands in the first plot: residuals are not independent of each others.
+* The QQplot and the histogram show signs of non-normality (althought that is not a big problem! Linear models are pretty robust to non-normality)
+
+*That is not a good linear model. Inference from such a model is unreliable. In particular you should not trust any measure of uncertainty (Standard Error, Confidence Interval, p-value).*
+
+## The solution: fit GLM for binary data, the binomial family
+
+Instead of a linear model, here we need to use a *Generalized Linear Model* (GLM). GLMs come in different flavours or *families*, each adapted to different types of response variables. Here we will talk about GLMs for binary data, which belong to the *binomial family*.
+
+Before discussing what a GLM is in details, let's see that it is very easy to fit one in R. For now we can use the function `glm()`, which works exactly like `lm()`, except that you need to specify a family:
+
+```{r}
+glm1 <- glm(y~x, data = data_binary, family = "binomial")
+summary(glm1)
+```
+
+The `summary` output looks very similar to that of `lm()`. From a quick look we see that $x$ has a positive effect on $y$, as expected.
+
+ANOVAs are difficult with GLMs, but we can still have a look to confirm that there is good evidence that $x$ has an effect on $y$. We just need to specify `test=Chisq`.
+```{r}
+anova(glm1, test = "LRT")
+```
+
+
+Let's see what the model prediction looks like:
+```{r}
+(p <- ggplot(data_binary, aes(x=x, y=y))+
+  geom_smooth(method="glm", method.args = list(family="binomial"), fullrange=TRUE) +
+  geom_point())
+```
+
+That looks good!
+
+What happens to the prediction when we extrapolate beyond the range of $x$ values?
+```{r}
+p + xlim(-10,10)
+```
+
+Two very good points:
+
+1. The prediction line never goes below 0 or above 1
+2. The uncertainty shrinks as we get to more extreme values of $x$
+
+Two of the three problems we saw with `lm()` are fixed. What about the third one, the distribution of residuals?
+
+```{r}
+p + geom_segment(aes(x=x, y=y, xend=x, yend=fitted(glm1)))
+```
+
+```{r}
+resid_panel(glm1)
+```
+
+The residuals do not look much better with the `glm()` than with the `lm()`. But that is okay! GLMs do not have the same assumptions as LMs. In fact, for binary binomial GLMs there are very few assumptions. The only one you need to remember for now is the absence of pseudo-replication, that is, observations are assumed to be independent of each other conditional on predictors, or again in different words, your model should not leave important blocking factors unaccounted for. 
+When working with GLMs, you do not need to use `resid_panel()`, and for today we will not need any quantitative assessments of assumptions. We will use other functions to assess assumptions when they become important in later sessions.
+
+### Practice with real data
+
+To get a bit ahead of tomorrow content we can start acquainting ourselves with some real data. 
+The data set "voles_early.csv" contains records from the begining of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival.
+
+Let's consider the relationship between mass and survival.
+
+```{r}
+survdat_early <- read_csv("../../Data/voles_early.csv")
+
+summary(survdat_early)
+
+ggplot(survdat_early, aes(x = mass, y=survival)) +
+  geom_point(alpha=0.2)
+```
+
+Difficult to see much on this plot. Better to add some jitter/beeswarm and a glm fit:
+
+
+```{r}
+ggplot(survdat_early, aes(x = mass, y=survival)) +
+  geom_beeswarm(groupOnX = FALSE) + 
+  geom_smooth(method = "glm", method.args=list(family="binomial"))
+
+```
+
+```{r}
+vole_glm <- glm(survival ~ mass, data = survdat_early)
+summary(vole_glm)
+
+```
+
+So it looks like higher body mass corresponds to lower survival. Do you trust this result?
+

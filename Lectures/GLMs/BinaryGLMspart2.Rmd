@@ -16,21 +16,28 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r}
+library(tidyverse)
+library(ggbeeswarm)
+```
 
-The data set "voles.csv" contains records from the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival.
 
-Today, let's consider whether sex explains variation in survival. 
+The data set "voles_early.csv" contains records from the begining of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival. Other variables than body mass probably structure the variation in survival, so we want to do some exploration before rushing to model survival as a function of body mass.
+
+![cute snow vole](cutevole.jpg)
+
+Let's start by considering whether sex explains variation in survival. 
 
 ```{r}
-survdat <- read.csv("../../Data/voles.csv")
-str(survdat)
+survdat_early <- read_csv("../../Data/voles_early.csv")
+str(survdat_early)
 
-survdat %>% group_by(sex, survival) %>%
+survdat_early %>% group_by(sex, survival) %>%
   summarize(count=n()) %>% 
   ggplot(aes(x = sex, y=survival, size=count)) +
   geom_point()
 
-vole_s_glm <- glm(survival ~ sex, data = survdat, family = "binomial")
+vole_s_glm <- glm(survival ~ sex, data = survdat_early, family = "binomial")
 summary(vole_s_glm)
 ```
 
@@ -39,7 +46,7 @@ How to interpret the summary output? What are these parameters and how do they r
 ```{r}
 coef(vole_s_glm)
 
-survdat %>% group_by(sex ) %>% summarize(mean=mean(survival)) 
+survdat_early %>% group_by(sex ) %>% summarize(mean=mean(survival)) 
 ```
 
 Parameter estimates actually predict mean sex-specific survival, but it is not obvious because the GLM is fitted, not a the scale of probabilities, but on a transformed scale, the logit scale.
@@ -77,190 +84,86 @@ That is a rather general recipe for GLMs. When you want to calculate something o
 
 It does not work if you apply the inverse transformation on different parameters separately. 
 
+
 #### Using `predict()`
 
+It is a good idea to know how to back-transform link functions by hand: it forces you to understand how GLMs work, it is useulf to simulate data and sometimes you really need to do calculations by hand. However, most of the time functions like `predict()` are a useful shortcut. You need to be control the argument `type = ` (what scale do you want the prediction on? "link" means the scale of the linear model; "response" means scale of probability) and `newdata = ` (what predictor values do you want predictions for? If you do not use this argument you get a prediction for each real data point in your data).
+
 ```{r}
-newdata_vole_sex <- tibble(sex=unique(survdat$sex))
+newdata_vole_sex <- tibble(sex=unique(survdat_early$sex))
 
 predict(vole_s_glm, type = "link", newdata = newdata_vole_sex)
+
 predict(vole_s_glm, type = "response", newdata = newdata_vole_sex)
-
 ```
 
 
+#### What about data generation?
+
+So, a GLM predicts probabilities, values between 0 and 1. But we observe only 0s and 1s. Does the GLM knows about that? Yes it does! The GLM relates probabilities to data in a very obvious way: for a predicted probability $p$, the GLM thinks you should observe a proportion $p$ of 1s and a proportion $1-p$ of 0s.
+If it seems trivial, it is because it is. GLMs for binary data are really easy.
+
+Other GLMs use more complex processes, so let us look more formally at how a binary GLM sees the world.
+
+The distribution turning a probability $p$ into 0s and 1s is the Bernouilli distribution, a special case of the binomial distribution. We can draw random samples from the Bernouilli distribution with `rbinom(n=, size=1, prob=)`
+
+```{r}
+(bernouilli_sample <- rbinom(n = 1000, size = 1, prob = 0.3))
+
+mean(bernouilli_sample)
+```
+
+All GLMs use distributions that have some kind of relationship between their mean and their variance. For the Bernouilli, the relationship is $variance = mean*(1-mean)$, and the mean is expected to be equal to the probability.
 
 
 ```{r}
-coef(vole_s_glm)[1] + coef(vole_s_glm)[2]*survdat$sex
+var(bernouilli_sample)
 
-predict(glm1)
-
-data_binary$latent_y <- predict(glm1)
+mean(bernouilli_sample)*(1-mean(bernouilli_sample))
 ```
 
-Visualise data (black) vs. what is predicted by regression coefficients:
-```{r}
-ggplot(data_binary, aes(x=x, y=y))+ geom_point(color="black")+
-  geom_point(inherit.aes = FALSE, aes(x=x, y=latent_y), color="red")
-```
-
-The difference is because regression coefficients of a glm are expressed on a different scale.
-
+That means that binary data are most variable for a probability of 0.5, and least variable for probabilities close to 0 or close to 1.
 
 ```{r}
-plogis(0)
-1/(1+exp(-0))
+nb_rows <- 1000
+variability_bernouilli <- tibble(lm_value= seq(-5,5, length.out = nb_rows),
+       probability = plogis(lm_value),
+       observation = rbinom(n = nb_rows, size = 1, prob = probability))
 
-plogis(0.98)
-1/(1+exp(-0.98))
-
-plogis(-0.98)
-1/(1+exp(--0.98))
-```
-
-We can better understand what the model says after the plogis transformation:
-```{r}
-data_binary$transformed_latent_y <- plogis(predict(glm1))
-
-ggplot(data_binary, aes(x=x, y=y))+ geom_point(color="black")+
-  geom_point(inherit.aes = FALSE, aes(x=x, y=transformed_latent_y), color="red")
+ggplot(variability_bernouilli, aes(x=lm_value, y=probability, col=probability)) +
+  geom_line()+
+  geom_point(inherit.aes = FALSE, aes(x=lm_value, y=observation))
 ```
 
 
-The model predictions obtained from the regression parameters are probabilities to observe 1 rather than a 0.
+### What a GLM is
 
-How does the model relate model predictions to the data?
-The Bernouilli distribution, rbinom(n=, size= 1, prob=), a special case of the binomial distribution with size=1.
+From previous examples we saw what a GLM is:
 
-```{r}
-rbinom(n = 100, size = 1, prob = 0.9)
-
-sapply(data_binary$transformed_latent_y, 
-       function(x) rbinom(n = 10, size = 1, prob = x))
-```
-
-
-
-From this example, we saw what a GLM is:
-
-1. A linear function (reponse = intercept + slope × predictor . . . ), what you see with summary(glm1)
-2. A "Link function"" = a map between the linear function (−∞ to +∞) and a
+1. A linear model (reponse = intercept + slope × predictor . . . ), what you see with summary(glm1)
+2. A "Link function" = a map between the linear function (−∞ to +∞) and a
 probability distribution (from 0 to 1 for Bernouilli)
-3. Probability distribution (Bernouilli, Binomial, Poisson. . . ) assumed to generate
+3. A probability distribution (Bernouilli, Binomial, Poisson. . . ) assumed to generate
 the data (either 0 or 1 for Bernouilli)
 
-### Practice 
+![glm scales](scales.png)
+
+
+### Practice
+
+Beyond sex, we suspect survival probability varies by age. 
+
 
 ```{r}
-survdat <- read.csv("../../Data/survivalweight.csv")
-
-str(survdat)
-
-```
-
-1. Model effect of weight
-```{r}
-ggplot(survdat, aes(x=weight, y=survival)) +
-   geom_jitter(width = 0.0, height = 0.02)  +
-  geom_smooth(method = "glm", method.args = list(family="binomial"))
-
-mw <- glm(survival ~ weight, data=survdat, family = "binomial")
-summary(mw)
-
-```
-
-What probability of survival does the model predict for a weigth of 30?
-```{r}
-plogis(coef(mw)[1] + coef(mw)[2]*30)
-
-ggplot(survdat, aes(x=weight, y=survival)) +
-   geom_jitter(width = 0.0, height = 0.02)  +
-  geom_smooth(method = "glm", method.args = list(family="binomial"))+
-  geom_point(x=30, y=plogis(coef(mw)[1] + coef(mw)[2]*30), color="red")
-
-```
-
-2. Model effect of Sex
-```{r}
-
-ggplot(survdat, aes(x=sex, y=survival)) +
-  geom_jitter(width = 0.1, height = 0.02) 
-
-msex <- glm(survival ~ sex, data=survdat, family = "binomial")
-summary(msex)
-
-plogis(coef(msex)[1]) #female prediction
-plogis(coef(msex)[1]+coef(msex)[2]) #male prediction
-
-# automated calculation with predict:
-newdat <- data.frame(sex=c("Female", "Male")) 
-(newdat$pred <- predict(object = msex, newdata = newdat, type = "response"))
-
-ggplot(survdat, aes(x=sex, y=survival)) +
-  geom_jitter(width = 0.1, height = 0.02) +
-  geom_point(data = newdat, aes(x=sex, y=pred, color=sex))
-
-# Adding SE (approximate CI)
-newdat <- data.frame(sex=c("Female", "Male")) 
-predobj <- predict(object = msex, newdata = newdat,
-                        type = "response", se.fit=TRUE)
-newdat$pred <- predobj$fit
-newdat$SE <- predobj$se.fit
-newdat$lowci <- newdat$pred -1.96*newdat$SE
-newdat$upci <- newdat$pred +1.96*newdat$SE
-
-ggplot(survdat, aes(x=sex, y=survival)) +
-  geom_jitter(width = 0.1, height = 0.02) +
-  geom_point(data = newdat, aes(x=sex, y=pred, color=sex))+
-  geom_errorbar(inherit.aes = FALSE,
-                data = newdat, aes(x=sex, ymin=lowci, ymax=upci, color=sex), width=0.2)
+survdat_early %>% group_by(sex, age) %>%
+  summarise(p_survival = mean(survival)) %>%
+ggplot(aes(x=interaction(sex, age), y=p_survival))+
+  geom_bar(stat = "identity")
+  
 ```
 
 
-3. Interaction weight:Sex?
-```{r}
-ggplot(survdat, aes(x=weight, y=survival, color=sex)) +
-  geom_point() + geom_smooth(method = "glm", method.args = list(family="binomial"))
-
-msw <- glm(survival ~ sex*weight, data=survdat, family = "binomial")
-summary(msw)
-```
-
-4. Draw prediction and CI for low and heigh weight for case of intercation.
-
-You must first calculate CI, then back-transform (i.e., apply plogis), or the CI goes below 0 or above 1. 
-In a GLM CIs are asymetrical. 
-
-```{r}
-newdat <- expand.grid(sex=c("Female", "Male"), weight=c(18,40)) 
-
-# this is inexact:
-predobj <- predict(object = msw, newdata = newdat,
-                        type = "response", se.fit=TRUE)
-newdat$pred <- predobj$fit
-newdat$SE <- predobj$se.fit
-newdat$lowci <- newdat$pred -1.96*newdat$SE
-newdat$upci <- newdat$pred +1.96*newdat$SE
-newdat # some values beyond 0 / 1
-```
-
-The correct way:
-```{r}
-predobj <- predict(object = msw, newdata = newdat,
-                        type = "link", se.fit=TRUE)
-newdat$pred <- plogis(predobj$fit)
-newdat$lowci <- plogis(predobj$fit -1.96*predobj$se.fit)
-newdat$upci <- plogis(predobj$fit +1.96*predobj$se.fit)
-newdat
-
-ggplot(survdat, aes(x=weight, y=survival, color=sex)) +
-  geom_point(alpha=0.1) + geom_smooth(method = "glm", method.args = list(family="binomial"))+
-  geom_point(data=newdat, aes(x=weight, color=sex, y=pred), size=2, alpha=0.5)+
-geom_errorbar(data=newdat,  inherit.aes = FALSE,
-              aes(x=weight, color=sex, ymin=lowci, ymax=upci), width=1)
-```
-
-
+### Bonuses
 
 #### Interlude: What happens inside `geom_smooth()`
 
@@ -275,11 +178,11 @@ newdata$uppCI <- predictions$fit + 1.96*predictions$se.fit
 
 
 ggplot(data_linear, aes(x=x, y=y))+
-  geom_point() +
-  geom_line(data = newdata, color="blue") +
-  geom_ribbon(data = newdata, aes(x=x, ymin=lowCI, ymax=uppCI),
-              inherit.aes = FALSE, fill="blue", alpha=0.2) +
-  geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
+geom_point() +
+geom_line(data = newdata, color="blue") +
+geom_ribbon(data = newdata, aes(x=x, ymin=lowCI, ymax=uppCI),
+inherit.aes = FALSE, fill="blue", alpha=0.2) +
+geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
 
 ```
 
@@ -288,7 +191,7 @@ ggplot(data_linear, aes(x=x, y=y))+
 Let's do it "by hand" with matrix multiplication.
 ```{r}
 newdata2 <- tibble(x=seq(min(data_linear$x), max(data_linear$x), length.out = 100),
-                  y=0)
+                   y=0)
 
 # The code below reproduces the result of predict(..., se.fit=TRUE)
 mm <- model.matrix(terms(lm0),newdata2)
@@ -302,17 +205,6 @@ newdata2 <- tibble(
 
 ```
 The key to compute confidence intervals is `vcov()`, which extracts the variance-covariance matrix of the uncertainty in parameters; the rest is mostly matrix multiplication.
-## Assignment
-
-1. 
-2.
-3.
 
 
-Explain variation in annual survival in the vole data set.
-
-```{r}
-voles <- read.csv("../../Data/voles.csv")
-head(voles)
-```
 

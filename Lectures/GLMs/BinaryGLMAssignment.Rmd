@@ -1,0 +1,37 @@
+---
+title: "Binary GLM assignment"
+author: "Timothee Bonnet"
+date: "28 August 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggbeeswarm)
+```
+
+1. We re-use the breast cancer density data set from assignment 4. 
+A clinical research group has collected data on breast cancer, breast density and BMI in adult women. Last time we looked at the relationship between breast density and age and body mass index. We found that breast density decreased with increasing age and BMI. We now want to test whether breast density is correlated with the occurence of breast cancer (variable `case`).
+
+Visualize the relationship between `case` and `density` (**0.5pt**) and add a geom_smooth corresponding to a binary glm (**0.5pt**).
+
+Then fit the glm corresponding to the graph and discuss how density is associated with the occurence of cancer (**0.5pt**). What is the predicted probability of cancer associated with a density of 0 and with a density of 100? (**0.5pt**)?
+
+
+
+```{r}
+bcd <- read_csv("../../Data/Breast cancer density.csv")
+bcd$case
+
+ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.1, width = 0) +
+  geom_smooth(method = "glm", args.method=list(family="binomial"))
+
+summary(glm(case ~ density, data=bcd))
+
+summary(glm(case ~ density + AGE + BMI, data=bcd))
+```
+
