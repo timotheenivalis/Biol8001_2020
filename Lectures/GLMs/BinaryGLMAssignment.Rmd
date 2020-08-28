@@ -14,24 +14,104 @@ library(tidyverse)
 library(ggbeeswarm)
 ```
 
-1. We re-use the breast cancer density data set from assignment 4. 
+### Vole natural selection confirmatory study
+
+During the course we used data collected from 2006 to 2010 to run a series of models to estimate the effect of body mass on survival in order to measure overall viability selection. We ended up with a model with an additive effect of `mass`, effects of `sex`, `age` and the interaction `sex:age` and found a positive effect of mass on survival (slope = 0.041, p-value=0.017). We are a bit suspicious of that result because initial models (not accounting for sex and age) were suggesting a negative effect of mass on survival. 
+We would like to confirm the effect of mass on survival and collected supplementary data in the years 2011 to 2014.
+
+1. Load the data `voles_late.csv`, visualize the relationship between survival and mass while accounting for age and sex. Then fit the model predicting survival from `mass + age*sex` (**1pt**). 
+
+2. Based on this model, how does the effect of `mass` estimated for the years 2011-2014 compare to the effect of `mass` estimated for the years 2006-2010? What could explain the difference? (**0.5pt**, **+0.5 bonus point** if you can demonstrate one such possibility)
+
+3. For a mass of 30g, what is the predicted survival probability for each of the 4 age and sex classes? Use predictions from the model fitted on the years 2011-2014. (**1pt**)
+
+*hint: you probably want to use `predict(..., newdata=..., ...)`.*
+
+```{r, include=FALSE}
+vole_late <- read_csv("../../Data/voles_late.csv")
+summary(vole_late)
+```
+
+```{r, include=FALSE}
+ggplot(vole_late, aes(x=mass, y=survival, col=interaction(sex, age))) +
+  geom_beeswarm(groupOnX = FALSE) +
+  geom_smooth(method = "glm", method.args=list(family="binomial"))
+
+summary(late_m0 <- glm(survival ~ 1 + mass + sex*age,
+                       data=vole_late, family = "binomial"))
+
+
+
+ggplot(vole_late, aes(x=mass, y=survival, col=interaction(sex, age))) +
+  geom_beeswarm(groupOnX = FALSE) +
+  geom_smooth(method = "glm", method.args=list(family="binomial")) +
+  facet_wrap(~year)
+
+newdat_late <- tibble(mass=30,
+                      sex=rep(unique(vole_late$sex),2), 
+                      age=rep(unique(vole_late$age), each=2))
+newdat_late$prediction <- predict(late_m0, newdata = newdat_late, type = "response")
+newdat_late
+```
+
+
+### Breast cancer
+
+We re-use the breast cancer density data set from assignment 4 `Breast cancer density.csv`.
 A clinical research group has collected data on breast cancer, breast density and BMI in adult women. Last time we looked at the relationship between breast density and age and body mass index. We found that breast density decreased with increasing age and BMI. We now want to test whether breast density is correlated with the occurence of breast cancer (variable `case`).
 
-Visualize the relationship between `case` and `density` (**0.5pt**) and add a geom_smooth corresponding to a binary glm (**0.5pt**).
+1. Visualize the relationship between `case` and `density` and add a geom_smooth corresponding to the binary glm of `case` as a function of `density` (**1pt**).
 
-Then fit the glm corresponding to the graph and discuss how density is associated with the occurence of cancer (**0.5pt**). What is the predicted probability of cancer associated with a density of 0 and with a density of 100? (**0.5pt**)?
+2. Then fit the glm corresponding to the graph and discuss how density is associated with the occurence of cancer (**0.5pt**). 
+
+3. Based on this model, what is the predicted probability of cancer associated with a density of 0 and that with a density of 100? Discuss whether this is a big difference (**1pt**).
+
+4. We suspect age and BMI are also risk factors for breast cancer and would like to estimate the effect of density while accounting for them. Add additive effects of `AGE` and `BMI` to the glm and look at the summary (**0.5pt**). What does the parameter `(Intercept)` mean? Why is it not interesting? (**0.5pt**).
+
+5. Compute a model prediction for the effect of density (for values of density between 0 and 100) when `AGE` is 50 and `BMI` is 27. What is the difference in probabilities of breast cancer between a density of 0 and a density of 100? How does the effect of density compare to the effect infered from the first model? (**1 pt**)
+
+*hint: you probably want to use `predict(..., newdata=..., ...)`.*
+
+For **1 bonus point** add the 95% confidence interval to that new prediction line. 
+
+*hint: if you use `predict()` you will need the argument `se.fit` and to think about what scale is appropriate to compute the confidence interval.*
 
 
 
-```{r}
+```{r, include=FALSE}
 bcd <- read_csv("../../Data/Breast cancer density.csv")
 bcd$case
 
 ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.1, width = 0) +
   geom_smooth(method = "glm", args.method=list(family="binomial"))
 
-summary(glm(case ~ density, data=bcd))
+summary(case0 <- glm(case ~ density, data=bcd, family = "binomial"))
 
-summary(glm(case ~ density + AGE + BMI, data=bcd))
+plogis(coef(case0)[1])
+plogis(coef(case0)[1] + 100*coef(case0)[2])
+
+
+summary(case2 <- glm(case ~ density + AGE + BMI, data=bcd, family = "binomial"))
+
+newdat <- tibble(density=seq(0,100, length.out = 100), AGE=50, BMI=27)
+
+newdat$y <- predict(case2, newdata = newdat, type = "response")
+
+ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.1, width = 0) +
+  geom_smooth(method = "glm", method.args=list(family="binomial"))+
+  geom_line(col="red",data=newdat, aes(y=y))
+
+
+predlat <- predict(case2, newdata = newdat, type = "link", se.fit = TRUE)
+newdat$y <- plogis(predlat$fit)
+newdat$CI_lower <- plogis(predlat$fit - 1.96*predlat$se.fit)
+newdat$CI_upper <- plogis(predlat$fit + 1.96*predlat$se.fit)
+
+ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.1, width = 0) +
+  geom_smooth(method = "glm", method.args=list(family="binomial"))+
+  geom_line(col="red",data=newdat, aes(y=y))+
+  geom_ribbon(data = newdat, aes(x=density, ymin=CI_lower, ymax=CI_upper),
+              inherit.aes = FALSE, alpha=0.1, fill="red")
+
 ```
 

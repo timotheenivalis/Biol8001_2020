@@ -21,11 +21,23 @@ library(tidyverse)
 library(ggbeeswarm)
 ```
 
+```{r}
+survival_early <- read_csv("../../Data/voles_early.csv")
+
+```
+
 
 ```{r}
-ggplot(survdat_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
+ggplot(survival_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
   geom_beeswarm(groupOnX = FALSE) + 
   geom_smooth(method = "glm", method.args=list(family="binomial"))
+
+
+summary(late_m0 <- glm(survival ~ 1 + mass + sex*age,
+                       data=survival_early, family = "binomial"))
+
+summary(late_m0 <- glm(survival ~ 1 + mass + mass*age+ as.factor(year),
+                       data=survival_early, family = "binomial"))
 ```
 
 
