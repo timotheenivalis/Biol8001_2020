@@ -22,22 +22,137 @@ library(ggbeeswarm)
 ```
 
 ```{r}
-survival_early <- read_csv("../../Data/voles_early.csv")
+survdat_early <- read_csv("../../Data/voles_early.csv")
 
 ```
 
+### Age and sex
+
+In addition to sex, we suspect survival probability varies by age (A=adult, J=juvenile).
 
 ```{r}
-ggplot(survival_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
+survdat_early %>% group_by(sex, age) %>%
+  summarise(p_survival = mean(survival)) %>%
+ggplot(aes(x=interaction(sex, age), y=p_survival))+
+  geom_bar(stat = "identity")
+```
+
+It even looks like sex and age interact, because the difference between females and males is not the same in adults and in juveniles.
+
+
+Let's fit a model corresponding to this insight:
+
+```{r}
+vole_s_sexXage <- glm(survival ~ sex*age, data = survdat_early, family = "binomial")
+summary(vole_s_sexXage)
+anova(vole_s_sexXage, test="Chisq")
+```
+
+So, the predicted survival probability of adult females is:
+```{r}
+plogis(coef(vole_s_sexXage)["(Intercept)"])
+
+#or, equivalently
+predict(vole_s_sexXage, newdata = tibble(sex="Female", age="A"), type = "response")
+```
+
+For adult males:
+```{r}
+plogis(coef(vole_s_sexXage)["(Intercept)"] + coef(vole_s_sexXage)["sexMale"])
+predict(vole_s_sexXage, newdata = tibble(sex="Male", age="A"), type = "response")
+```
+
+For juvenile females:
+```{r}
+plogis(coef(vole_s_sexXage)["(Intercept)"] + coef(vole_s_sexXage)["ageJ"])
+predict(vole_s_sexXage, newdata = tibble(sex="Female", age="J"), type = "response")
+```
+
+and for juvenile males:
+```{r}
+plogis(coef(vole_s_sexXage)["(Intercept)"] + coef(vole_s_sexXage)["sexMale"]+
+         coef(vole_s_sexXage)["ageJ"]+ coef(vole_s_sexXage)["sexMale:ageJ"])
+predict(vole_s_sexXage, newdata = tibble(sex="Male", age="J"), type = "response")
+```
+
+
+In a real study we would probably consider exploring other variables, but let's pretend we are sufficiently happy with our understanding of variation in survival and are ready to include body mass in order to estimate viability selection on mass.
+
+### Mass
+
+In our haste to include body mass, we first forget everything we have learned about the effects of sex and age.
+
+```{r}
+ggplot(survdat_early, aes(x = mass, y=survival)) +
+  geom_beeswarm(groupOnX = FALSE) + 
+  geom_smooth(method = "glm", method.args=list(family="binomial"))
+```
+
+```{r}
+vole_glm <- glm(survival ~ mass, data = survdat_early)
+summary(vole_glm)
+```
+
+Mass is negatively correlated with survival. 
+
+This model predicts that a 10g vole has a survival probability of 
+```{r}
+predict(vole_glm, newdata = tibble(mass=10), type = "response")
+```
+
+and a 60g vole a probability of 
+```{r}
+predict(vole_glm, newdata = tibble(mass=60), type = "response")
+```
+
+However, we should realize that the negative relationship is a consequence of sex-age structure:
+
+```{r}
+ggplot(survdat_early, aes(x = mass, y=survival)) +
+  geom_beeswarm(groupOnX = FALSE, aes(col=interaction(sex, age))) + 
+  geom_smooth(method = "glm", method.args=list(family="binomial"))
+```
+
+We need sex and age in our models if we want to estimate the effect of mass independent of sex and age, which have rather trivial effects on survival (these animals have short life spans; adults senesce quickly and tend to get sick before their second winter; we do not think this has much to do with body mass; also, males get into nasty fights, especially when they become adults and can die from injuries.)
+
+Let's ask ggplot to show us the effect of mass, sex and age together:
+```{r}
+ggplot(survdat_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
   geom_beeswarm(groupOnX = FALSE) + 
   geom_smooth(method = "glm", method.args=list(family="binomial"))
 
 
-summary(late_m0 <- glm(survival ~ 1 + mass + sex*age,
-                       data=survival_early, family = "binomial"))
-
-summary(late_m0 <- glm(survival ~ 1 + mass + mass*age+ as.factor(year),
-                       data=survival_early, family = "binomial"))
 ```
 
+That plot corresponds to the model
+```{r}
+summary(glm(survival ~ 1 + mass * sex*age,
+                 data=survdat_early, family = "binomial"))
+```
+
+That may be an interesting model, be it is not really what we are after. We were trying to ask *What is the effect of mass on survival*, as a way to quantify natural selection overall, not within sex-age classes.
+
+So, a better model is:
+```{r}
+summary(final_model <- glm(survival ~ 1 + mass + sex*age,
+                 data=survdat_early, family = "binomial"))
+```
+
+From that model we conclude that mass is positively selected in this vole population.
+
+Let's visualize the prediction from that model for each age-sex class:
+
+```{r}
+newdat_finalmodel  <- expand_grid(sex=unique(survdat_early$sex), 
+                                  age=unique(survdat_early$age), 
+            mass=seq(min(survdat_early$mass,na.rm = TRUE), 
+                     max(survdat_early$mass,na.rm = TRUE), length.out = 100))
+
+newdat_finalmodel$pred <- predict(final_model, type = "response", newdata = newdat_finalmodel)
+
+ggplot(survdat_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
+  geom_beeswarm(groupOnX = FALSE)+
+  geom_line(data = newdat_finalmodel, aes(x=mass, y=pred))
+
+```
 

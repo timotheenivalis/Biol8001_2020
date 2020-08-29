@@ -22,7 +22,7 @@ library(ggbeeswarm)
 ```
 
 
-The data set "voles_early.csv" contains records from the begining of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival. Other variables than body mass probably structure the variation in survival, so we want to do some exploration before rushing to model survival as a function of body mass.
+The data set "voles_early.csv" contains records from the begining of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival. Other variables than body mass probably structure the variation in survival, so we want to run some exploratory anaylses before rushing to model survival as a function of body mass.
 
 ![cute snow vole](cutevole.jpg)
 
@@ -32,10 +32,10 @@ Let's start by considering whether sex explains variation in survival.
 survdat_early <- read_csv("../../Data/voles_early.csv")
 str(survdat_early)
 
-survdat_early %>% group_by(sex, survival) %>%
+(p <- survdat_early %>% group_by(sex, survival) %>%
   summarize(count=n()) %>% 
   ggplot(aes(x = sex, y=survival, size=count)) +
-  geom_point()
+  geom_point())
 
 vole_s_glm <- glm(survival ~ sex, data = survdat_early, family = "binomial")
 summary(vole_s_glm)
@@ -135,6 +135,20 @@ ggplot(variability_bernouilli, aes(x=lm_value, y=probability, col=probability)) 
   geom_point(inherit.aes = FALSE, aes(x=lm_value, y=observation))
 ```
 
+Let's simulate survival for each sex based on the predicted survival probabilities:
+```{r}
+pred_survival <- predict(vole_s_glm, type = "response")
+
+survdat_early$simul_surv <- sapply(pred_survival, function(x) rbinom(n = 1, size = 1, prob = x))
+
+survdat_early
+
+survdat_early %>% group_by(sex) %>%
+  summarise(simulated_mean = mean(simul_surv), real_mean=mean(survival),
+            simulated_var = var(simul_surv), real_var=var(survival))
+
+```
+
 
 ### What a GLM is
 
@@ -149,62 +163,49 @@ the data (either 0 or 1 for Bernouilli)
 ![glm scales](scales.png)
 
 
-### Practice
 
-Beyond sex, we suspect survival probability varies by age. 
+<!-- ### Bonuses -->
 
+<!-- #### Interlude: What happens inside `geom_smooth()` -->
 
-```{r}
-survdat_early %>% group_by(sex, age) %>%
-  summarise(p_survival = mean(survival)) %>%
-ggplot(aes(x=interaction(sex, age), y=p_survival))+
-  geom_bar(stat = "identity")
-  
-```
+<!-- Let's do it "by hand" with `predict()`: -->
 
-
-### Bonuses
-
-#### Interlude: What happens inside `geom_smooth()`
-
-Let's do it "by hand" with `predict()`:
-
-```{r}
-newdata <- tibble(x=seq(min(data_linear$x), max(data_linear$x), length.out = 100))
-predictions <- predict(lm0, newdata = newdata, se.fit = TRUE)
-newdata$y <- predictions$fit
-newdata$lowCI <- predictions$fit - 1.96*predictions$se.fit
-newdata$uppCI <- predictions$fit + 1.96*predictions$se.fit
+<!-- ```{r} -->
+<!-- newdata <- tibble(x=seq(min(data_linear$x), max(data_linear$x), length.out = 100)) -->
+<!-- predictions <- predict(lm0, newdata = newdata, se.fit = TRUE) -->
+<!-- newdata$y <- predictions$fit -->
+<!-- newdata$lowCI <- predictions$fit - 1.96*predictions$se.fit -->
+<!-- newdata$uppCI <- predictions$fit + 1.96*predictions$se.fit -->
 
 
-ggplot(data_linear, aes(x=x, y=y))+
-geom_point() +
-geom_line(data = newdata, color="blue") +
-geom_ribbon(data = newdata, aes(x=x, ymin=lowCI, ymax=uppCI),
-inherit.aes = FALSE, fill="blue", alpha=0.2) +
-geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values))
+<!-- ggplot(data_linear, aes(x=x, y=y))+ -->
+<!-- geom_point() + -->
+<!-- geom_line(data = newdata, color="blue") + -->
+<!-- geom_ribbon(data = newdata, aes(x=x, ymin=lowCI, ymax=uppCI), -->
+<!-- inherit.aes = FALSE, fill="blue", alpha=0.2) + -->
+<!-- geom_segment(aes(x=x, y=y, xend= x, yend=lm0$fitted.values)) -->
 
-```
+<!-- ``` -->
 
-#### Bonus! What happens inside `predict()`?
+<!-- #### Bonus! What happens inside `predict()`? -->
 
-Let's do it "by hand" with matrix multiplication.
-```{r}
-newdata2 <- tibble(x=seq(min(data_linear$x), max(data_linear$x), length.out = 100),
-                   y=0)
+<!-- Let's do it "by hand" with matrix multiplication. -->
+<!-- ```{r} -->
+<!-- newdata2 <- tibble(x=seq(min(data_linear$x), max(data_linear$x), length.out = 100), -->
+<!--                    y=0) -->
 
-# The code below reproduces the result of predict(..., se.fit=TRUE)
-mm <- model.matrix(terms(lm0),newdata2)
-newdata2$y <- as.vector(mm %*% lm0$coefficients)
-pvar1 <- diag(mm %*% tcrossprod(vcov(lm0),mm))
-newdata2 <- tibble(
-  newdata2,
-  lowCI2 = newdata2$y-1.96*sqrt(pvar1),
-  uppCI2 = newdata2$y+1.96*sqrt(pvar1)
-) 
+<!-- # The code below reproduces the result of predict(..., se.fit=TRUE) -->
+<!-- mm <- model.matrix(terms(lm0),newdata2) -->
+<!-- newdata2$y <- as.vector(mm %*% lm0$coefficients) -->
+<!-- pvar1 <- diag(mm %*% tcrossprod(vcov(lm0),mm)) -->
+<!-- newdata2 <- tibble( -->
+<!--   newdata2, -->
+<!--   lowCI2 = newdata2$y-1.96*sqrt(pvar1), -->
+<!--   uppCI2 = newdata2$y+1.96*sqrt(pvar1) -->
+<!-- )  -->
 
-```
-The key to compute confidence intervals is `vcov()`, which extracts the variance-covariance matrix of the uncertainty in parameters; the rest is mostly matrix multiplication.
+<!-- ``` -->
+<!-- The key to compute confidence intervals is `vcov()`, which extracts the variance-covariance matrix of the uncertainty in parameters; the rest is mostly matrix multiplication. -->
 
 
 

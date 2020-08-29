@@ -29,7 +29,7 @@ Tomorrow:
 * Understand the structure and components of GLMs
 * Interpret and create model predictions from binary GLMs
 * Practice analyses workflow with binary GLMs
-* Understand the pitfall of quasi-complete separation
+* (Understand the pitfall of quasi-complete separation)
 
 Why binary GLMs? Because these are the simplest of all GLMs. Not too much can go wrong with them. In week 7 we will work with other types of GLMs for which we will need to learn some more concepts and be more careful with assumptions.
 
@@ -148,13 +148,13 @@ resid_panel(lm1)
 * We see bands in the first plot: residuals are not independent of each others.
 * The QQplot and the histogram show signs of non-normality (althought that is not a big problem! Linear models are pretty robust to non-normality)
 
-*That is not a good linear model. Inference from such a model is unreliable. In particular you should not trust any measure of uncertainty (Standard Error, Confidence Interval, p-value).*
+*That is not a good linear model. Inference from such a model is unreliable. In particular you should not trust any measure of uncertainty (Standard Error, Confidence Interval, p-value), and you should certainly not trust extrapolation.*
 
 ## The solution: fit GLM for binary data, the binomial family
 
-Instead of a linear model, here we need to use a *Generalized Linear Model* (GLM). GLMs come in different flavours or *families*, each adapted to different types of response variables. Here we will talk about GLMs for binary data, which belong to the *binomial family*.
+Instead of a linear model, here we need to use a **Generalized Linear Model** (GLM). GLMs come in different flavours or *families*, each adapted to different types of response variables. Here we will talk about GLMs for binary data, which belong to the *binomial family*.
 
-Before discussing what a GLM is in details, let's see that it is very easy to fit one in R. For now we can use the function `glm()`, which works exactly like `lm()`, except that you need to specify a family:
+Before discussing what a GLM is in details, let's see that it is very easy to fit one in R. We can use the function `glm()`, which works exactly like `lm()`, except that you need to specify a family:
 
 ```{r}
 glm1 <- glm(y~x, data = data_binary, family = "binomial")
