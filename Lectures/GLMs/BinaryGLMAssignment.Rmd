@@ -9,9 +9,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, message=FALSE, include=FALSE}
 library(tidyverse)
 library(ggbeeswarm)
+library(emmeans)
 ```
 
 ### Vole natural selection confirmatory study
@@ -21,11 +22,27 @@ We would like to confirm the effect of mass on survival and collected supplement
 
 1. Load the data `voles_late.csv`, visualize the relationship between survival and mass while accounting for age and sex. Then fit the model predicting survival from `mass + age*sex` (**1pt**). 
 
+```{r}
+summary(vole_late_glm <- glm(survival ~ 1 + mass + sex*age,
+                       data=vole_late, family = "binomial"))
+anova(vole_late_glm, test = "Chisq")
+
+summary(vole_late_glm2 <- glm(survival ~ 1  + sex*age+ mass,
+                       data=vole_late, family = "binomial"))
+drop1(vole_late_glm2, test = "Chisq")
+drop1(vole_late_glm, test = "Chisq")
+
+library(car)
+Anova(vole_late_glm2, type="III")
+Anova(vole_late_glm, type="III")
+```
+
+
 2. Based on this model, how does the effect of `mass` estimated for the years 2011-2014 compare to the effect of `mass` estimated for the years 2006-2010? What could explain the difference? (**0.5pt**, **+0.5 bonus point** if you can demonstrate one such possibility)
 
 3. For a mass of 30g, what is the predicted survival probability for each of the 4 age and sex classes? Use predictions from the model fitted on the years 2011-2014. (**1pt**)
 
-*hint: you probably want to use `predict(..., newdata=..., ...)`.*
+*hint: you probably want to use `emmeans(..., at=..., ...)` or `predict(..., newdata=..., ...)`.*
 
 ```{r, include=FALSE}
 vole_late <- read_csv("../../Data/voles_late.csv")
@@ -40,6 +57,14 @@ ggplot(vole_late, aes(x=mass, y=survival, col=interaction(sex, age))) +
 summary(late_m0 <- glm(survival ~ 1 + mass + sex*age,
                        data=vole_late, family = "binomial"))
 
+emmeans(late_m0, ~ sex*age, at=list(mass=30), type="response")
+
+vole_late$sex <- factor(vole_late$sex, levels = c("Male", "Female"))
+
+vole_late$massct <- vole_late$mass - mean(vole_late$mass, na.rm = TRUE)
+
+summary(late_m0 <- glm(survival ~ 1 + massct + sex*age,
+                       data=vole_late, family = "binomial"))
 
 
 ggplot(vole_late, aes(x=mass, y=survival, col=interaction(sex, age))) +
@@ -70,8 +95,6 @@ A clinical research group has collected data on breast cancer, breast density an
 
 5. Compute a model prediction for the effect of density (for values of density between 0 and 100) when `AGE` is 50 and `BMI` is 27. What is the difference in probabilities of breast cancer between a density of 0 and a density of 100? How does the effect of density compare to the effect infered from the first model? (**1 pt**)
 
-*hint: you probably want to use `predict(..., newdata=..., ...)`.*
-
 For **1 bonus point** add the 95% confidence interval to that new prediction line. 
 
 *hint: if you use `predict()` you will need the argument `se.fit` and to think about what scale is appropriate to compute the confidence interval.*
@@ -82,7 +105,10 @@ For **1 bonus point** add the 95% confidence interval to that new prediction lin
 bcd <- read_csv("../../Data/Breast cancer density.csv")
 bcd$case
 
-ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.1, width = 0) +
+ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.05, width = 1, alpha=0.2) +
+  geom_smooth(method = "glm", args.method=list(family="binomial"))
+
+ggplot(bcd, aes(x=density, y=case)) + geom_beeswarm(groupOnX = FALSE) +
   geom_smooth(method = "glm", args.method=list(family="binomial"))
 
 summary(case0 <- glm(case ~ density, data=bcd, family = "binomial"))
@@ -96,6 +122,10 @@ summary(case2 <- glm(case ~ density + AGE + BMI, data=bcd, family = "binomial"))
 newdat <- tibble(density=seq(0,100, length.out = 100), AGE=50, BMI=27)
 
 newdat$y <- predict(case2, newdata = newdat, type = "response")
+
+emmeans(object = case2, specs = ~ density + AGE + BMI,
+        at=list(density=c(0,100), AGE=50, BMI=27),
+        type="response")
 
 ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.1, width = 0) +
   geom_smooth(method = "glm", method.args=list(family="binomial"))+
@@ -113,5 +143,29 @@ ggplot(bcd, aes(x=density, y=case)) + geom_jitter(height = 0.1, width = 0) +
   geom_ribbon(data = newdat, aes(x=density, ymin=CI_lower, ymax=CI_upper),
               inherit.aes = FALSE, alpha=0.1, fill="red")
 
+newdat %>%
+  filter(AGE==50) %>% select(AGE)
+
+
+```
+
+
+```{r}
+Cancer <- bcd
+Crisk_glm <- glm(case ~ density+AGE*BMI, data = Cancer, family = "binomial")
+
+newdat <- tibble(density=seq(0,100, length.out = 100), AGE=50, BMI=27)
+PCrisk <- predict(Crisk_glm, newdata = newdat, se.fit = TRUE, type = "link")
+newdat$y <- plogis(predlat$fit)
+newdat$CI_lower <- plogis(predlat$fit - 1.96*predlat$se.fit)
+newdat$CI_upper <- plogis(predlat$fit + 1.96*predlat$se.fit)
+
+ggplot(Crisk_glm, aes(x = density, y= case))+ 
+  geom_beeswarm(groupOnX = FALSE, alpha = 0.2) + 
+  geom_smooth(method = "glm", method.args=list(family="binomial"))+
+  geom_line(col="red",data=newdat, aes(y=y))+
+  geom_ribbon(data = newdat, aes(x=density, ymin=CI_lower, ymax=CI_upper),
+              inherit.aes = FALSE, alpha=0.1, fill="red")+
+  xlab("Breast Density")+ ylab("Occurence of Breast Cancer")
 ```
 

@@ -79,7 +79,7 @@ Let us visualize these data
   geom_point())
 ```
 
-We fit a simple linear model and visualise the model prediciton:
+We fit a simple linear model and visualise the model prediction:
 ```{r}
 lm0 <- lm(y~x, data = data_linear)
 summary(lm0)
@@ -104,7 +104,7 @@ That looks like an acceptable linear model.
 
 ### When a linear model fails
 
-Now let's generate data with the same structure, except we convert the continuous values to binary values, following a logistic transformation and a Bernouilli distribution. For this type of data we generally want to model the probability of a 1 (survival, presence, success...). Data can be either 0 or 1. Although we cannot observe values between 0 and 1 (e.g., 0.5) in the data, we can interpret such a value: it is a probability (of observing a 1). On the other hand, values below 0 or above 1 are meaningless for a binary variable.
+Now let's generate data with the same structure, except we convert the continuous values to binary values, following a logistic transformation and a Bernoulli distribution. For this type of data we generally want to model the probability of a 1 (survival, presence, success...). Data can be either 0 or 1. Although we cannot observe values between 0 and 1 (e.g., 0.5) in the data, we can interpret such a value: it is a probability (of observing a 1). On the other hand, values below 0 or above 1 are meaningless for a binary variable.
 
 ```{r}
 set.seed(934)
@@ -138,15 +138,15 @@ Several problems are apparent:
 
 * The regression line (in blue) goes below 0 and above 1.
 * The uncertainty (confidence interval in grey) gets larger for extreme values of $x$, while it seems like we are pretty sure there will be only 0s below $x=-2$ and only 1s above $x=1$, the uncertainty should be smaller on the sides!
-* Residuals are not independent of each others (they are more or less ranked from left to right) and their variation is not constant (from left to right the variation is small, then big, then small).
+* Residuals are not independent of each other (they are more or less ranked from left to right) and their variation is not constant (from left to right the variation is small, then big, then small).
 
 In addition, if we look at the diagnostic plots:
 ```{r}
 resid_panel(lm1)
 ```
 
-* We see bands in the first plot: residuals are not independent of each others.
-* The QQplot and the histogram show signs of non-normality (althought that is not a big problem! Linear models are pretty robust to non-normality)
+* We see bands in the first plot: residuals are not independent of each other.
+* The QQplot and the histogram show signs of non-normality (although that is not a big problem! Linear models are pretty robust to non-normality)
 
 *That is not a good linear model. Inference from such a model is unreliable. In particular you should not trust any measure of uncertainty (Standard Error, Confidence Interval, p-value), and you should certainly not trust extrapolation.*
 
@@ -165,7 +165,7 @@ The `summary` output looks very similar to that of `lm()`. From a quick look we 
 
 ANOVAs are difficult with GLMs, but we can still have a look to confirm that there is good evidence that $x$ has an effect on $y$. We just need to specify `test=Chisq`.
 ```{r}
-anova(glm1, test = "LRT")
+anova(glm1, test = "Chisq")
 ```
 
 
@@ -201,10 +201,10 @@ resid_panel(glm1)
 The residuals do not look much better with the `glm()` than with the `lm()`. But that is okay! GLMs do not have the same assumptions as LMs. In fact, for binary binomial GLMs there are very few assumptions. The only one you need to remember for now is the absence of pseudo-replication, that is, observations are assumed to be independent of each other conditional on predictors, or again in different words, your model should not leave important blocking factors unaccounted for. 
 When working with GLMs, you do not need to use `resid_panel()`, and for today we will not need any quantitative assessments of assumptions. We will use other functions to assess assumptions when they become important in later sessions.
 
-### Practice with real data
+## Practice with real data
 
 To get a bit ahead of tomorrow content we can start acquainting ourselves with some real data. 
-The data set "voles_early.csv" contains records from the begining of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival.
+The data set "voles_early.csv" contains records from the beginning of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival.
 
 Let's consider the relationship between mass and survival.
 

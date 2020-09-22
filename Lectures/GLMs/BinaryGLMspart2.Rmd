@@ -16,32 +16,33 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+## Predicting vole survival
+
+```{r, message=FALSE}}
 library(tidyverse)
 library(ggbeeswarm)
+library(emmeans)
 ```
 
 
-The data set "voles_early.csv" contains records from the begining of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival. Other variables than body mass probably structure the variation in survival, so we want to run some exploratory anaylses before rushing to model survival as a function of body mass.
+The data set "voles_early.csv" contains records from the beginning of the survey of a wild rodent population. Among the variables is "survival", a binary variable indicating whether an individual captured on a given year survived to the next year. We want to understand variation in survival and in particular whether there is natural selection on body mass through survival. Other variables than body mass probably structure the variation in survival, so we want to run some exploratory analyses before rushing to model survival as a function of body mass.
 
 ![cute snow vole](cutevole.jpg)
 
-Let's start by considering whether sex explains variation in survival. 
+Let's start by considering whether sex explains the probability of year-to-year survival.
 
 ```{r}
 survdat_early <- read_csv("../../Data/voles_early.csv")
 str(survdat_early)
 
-(p <- survdat_early %>% group_by(sex, survival) %>%
-  summarize(count=n()) %>% 
-  ggplot(aes(x = sex, y=survival, size=count)) +
-  geom_point())
+survdat_early %>% group_by(sex) %>%
+  summarize(p_survival=mean(survival), count_survival=sum(survival), count_death=sum(1-survival))
 
 vole_s_glm <- glm(survival ~ sex, data = survdat_early, family = "binomial")
 summary(vole_s_glm)
 ```
 
-How to interpret the summary output? What are these parameters and how do they relate to data?
+How to interpret the summary output? What are these parameters and how do they relate  to the probability of year-to-year survival in females and males?
 
 ```{r}
 coef(vole_s_glm)
@@ -49,21 +50,21 @@ coef(vole_s_glm)
 survdat_early %>% group_by(sex ) %>% summarize(mean=mean(survival)) 
 ```
 
-Parameter estimates actually predict mean sex-specific survival, but it is not obvious because the GLM is fitted, not a the scale of probabilities, but on a transformed scale, the logit scale.
+Parameter estimates actually predict mean sex-specific survival, but it is not obvious because the GLM is fitted, not on the scale of probabilities, but on a transformed linear scale (on which effects are linear, like in a linear model).
 
 All GLMs have such a transformation. It is called the "*Link function*".
 
-To go from a probability to the regression scale our GLM applied a logit link function:
+To go from a probability to the linear scale our GLM applied a logit link function:
 
 $$
-\mathrm{logit}(y) = \log(\frac{y}{1-y})
+\mathrm{logit}(p) = \log(\frac{p}{1-p})
 $$
 
-To go from model predictions on the regression scale to the data scale we apply the inverse link function, which is
+To go from model predictions on the linear scale to the probability scale we apply the inverse link function, which is
 $$
 \mathrm{logit}^{-1}(y) = \frac{1}{1+e^{-y}}
 $$
-in R you can run this inverse logit function with `plogis`.
+in R you can run this inverse logit function with `plogis()`.
 
 So, our model told us that the predicted survival for females (the intercept) was:
 ```{r}
@@ -77,92 +78,132 @@ plogis(coef(vole_s_glm)[1] + coef(vole_s_glm)[2] )
 
 ```
 
-That is a rather general recipe for GLMs. When you want to calculate something on the scale of the data (that makes more sense to the human brain) from parameter estimates you:
+In a binomial GLM, when you want to calculate something on the probability scale (that makes more sense to the human brain) from parameter estimates you:
 
-1. Calculate the prediction using parameter estimates
+1. Calculate the prediction using parameter estimates on the linear scale
 2. Apply the inverse transformation used in the GLM. 
 
 It does not work if you apply the inverse transformation on different parameters separately. 
 
+#### Using `emmeans()`
 
-#### Using `predict()`
-
-It is a good idea to know how to back-transform link functions by hand: it forces you to understand how GLMs work, it is useulf to simulate data and sometimes you really need to do calculations by hand. However, most of the time functions like `predict()` are a useful shortcut. You need to be control the argument `type = ` (what scale do you want the prediction on? "link" means the scale of the linear model; "response" means scale of probability) and `newdata = ` (what predictor values do you want predictions for? If you do not use this argument you get a prediction for each real data point in your data).
+It is a good idea to know how to back-transform link functions by hand: it forces you to understand how GLMs work, it is useful to simulate data and sometimes you really need to do calculations by hand. However, most of the time functions like `emmeans()`  are a useful shortcut. You need to be control the argument `type = ` (what scale do you want the prediction on? "link" means the scale of the linear model; "response" means scale of probability).
 
 ```{r}
-newdata_vole_sex <- tibble(sex=unique(survdat_early$sex))
-
-predict(vole_s_glm, type = "link", newdata = newdata_vole_sex)
-
-predict(vole_s_glm, type = "response", newdata = newdata_vole_sex)
+emmeans(vole_s_glm, ~sex, type="response")
 ```
 
-
-#### What about data generation?
+## What about data generation?
 
 So, a GLM predicts probabilities, values between 0 and 1. But we observe only 0s and 1s. Does the GLM knows about that? Yes it does! The GLM relates probabilities to data in a very obvious way: for a predicted probability $p$, the GLM thinks you should observe a proportion $p$ of 1s and a proportion $1-p$ of 0s.
 If it seems trivial, it is because it is. GLMs for binary data are really easy.
 
 Other GLMs use more complex processes, so let us look more formally at how a binary GLM sees the world.
 
-The distribution turning a probability $p$ into 0s and 1s is the Bernouilli distribution, a special case of the binomial distribution. We can draw random samples from the Bernouilli distribution with `rbinom(n=, size=1, prob=)`
+The distribution turning a probability $p$ into 0s and 1s is the bernoulli distribution, a special case of the binomial distribution. We can draw random samples from the bernoulli distribution with `rbinom(n=, size=1, prob=)`
 
 ```{r}
-(bernouilli_sample <- rbinom(n = 1000, size = 1, prob = 0.3))
+(bernoulli_sample <- rbinom(n = 1000, size = 1, prob = 0.3))
 
-mean(bernouilli_sample)
+mean(bernoulli_sample)
 ```
 
-All GLMs use distributions that have some kind of relationship between their mean and their variance. For the Bernouilli, the relationship is $variance = mean*(1-mean)$, and the mean is expected to be equal to the probability.
+All GLMs use distributions that have some kind of relationship between their mean and their variance. For the bernoulli, the relationship is $variance = mean*(1-mean)$, and the mean is expected to be equal to the probability.
 
 
 ```{r}
-var(bernouilli_sample)
+var(bernoulli_sample)
 
-mean(bernouilli_sample)*(1-mean(bernouilli_sample))
+mean(bernoulli_sample)*(1-mean(bernoulli_sample))
 ```
 
 That means that binary data are most variable for a probability of 0.5, and least variable for probabilities close to 0 or close to 1.
 
 ```{r}
 nb_rows <- 1000
-variability_bernouilli <- tibble(lm_value= seq(-5,5, length.out = nb_rows),
+variability_bernoulli <- tibble(lm_value= seq(-5,5, length.out = nb_rows),
        probability = plogis(lm_value),
        observation = rbinom(n = nb_rows, size = 1, prob = probability))
 
-ggplot(variability_bernouilli, aes(x=lm_value, y=probability, col=probability)) +
+ggplot(variability_bernoulli, aes(x=lm_value, y=probability, col=probability)) +
   geom_line()+
   geom_point(inherit.aes = FALSE, aes(x=lm_value, y=observation))
 ```
 
 Let's simulate survival for each sex based on the predicted survival probabilities:
 ```{r}
-pred_survival <- predict(vole_s_glm, type = "response")
+pred_survival <- summary(emmeans(vole_s_glm, ~sex, type = "response"))
 
-survdat_early$simul_surv <- sapply(pred_survival, function(x) rbinom(n = 1, size = 1, prob = x))
+simulated_survival <- pred_survival %>%  
+  group_by(sex) %>%
+  select(prob) %>%
+  summarise(survival = rbinom(n = 100, size = 1, prob = prob), prob=prob)
 
-survdat_early
 
-survdat_early %>% group_by(sex) %>%
-  summarise(simulated_mean = mean(simul_surv), real_mean=mean(survival),
-            simulated_var = var(simul_surv), real_var=var(survival))
+simulated_survival %>% group_by(sex) %>%
+  summarise(simulated_mean = mean(survival), expected_mean=mean(prob),
+            simulated_var = var(survival), expected_var=mean(prob)*(1-mean(prob)))
 
 ```
 
 
-### What a GLM is
+## What a GLM is
 
 From previous examples we saw what a GLM is:
 
-1. A linear model (reponse = intercept + slope × predictor . . . ), what you see with summary(glm1)
+1. A linear model (response = intercept + slope × predictor . . . ), what you see with summary(glm1)
 2. A "Link function" = a map between the linear function (−∞ to +∞) and a
-probability distribution (from 0 to 1 for Bernouilli)
-3. A probability distribution (Bernouilli, Binomial, Poisson. . . ) assumed to generate
-the data (either 0 or 1 for Bernouilli)
+probability distribution (from 0 to 1 for bernoulli)
+3. A probability distribution (bernoulli, Binomial, Poisson. . . ) assumed to generate
+the data (either 0 or 1 for bernoulli)
 
 ![glm scales](scales.png)
 
 
+$$
+y_i = \alpha + \beta x_i \\
+p_i = \mathrm{logit}^{-1}(y_i) \\
+\mathrm{obs}_i \sim Bernoulli(p_i)
+$$
+
+
+### Back to Thursday simulations
+
+On Thursday I forgot to run the code re-defining some of the parameters and therefore did not get a very good match between expected probabilities and glm fit. That should be better:
+
+```{r}
+set.seed(934)
+number_observarions <- 30
+alpha <- 1
+beta <- 2
+sigma_epsilon <- 0.5
+
+x <- rnorm(n = number_observarions, mean = 0, sd = 1)
+latent <- alpha + beta*x + rnorm(n=number_observarions, mean = 0, sd = sigma_epsilon)
+proba <- plogis(latent)
+
+y <- sapply(proba, FUN=function(x){rbinom(1,1,x)})
+
+data_binary <- tibble(x=x, y=y, proba=proba)
+
+```
+
+```{r}
+ggplot(data = data_binary, aes(x=x, y=y))+
+  geom_point()+
+  geom_point(inherit.aes = FALSE, aes(x=x, y=proba), col="red")+
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), fullrange=TRUE) +
+  xlim(-4,3)
+```
+
+
+Also, compare paramter estimates in the GLM summary to simulated parameters $\alpha$ and $\beta$:
+```{r}
+glm1 <- glm(y ~ x, data = data_binary, family = "binomial")
+summary(glm1)
+```
+
+The model is really estimating the parameter we used to simulate the data. That makes sense, because the equation we used to simulate data is the equation that the GLM assumes to estimate parameters.
 
 <!-- ### Bonuses -->
 

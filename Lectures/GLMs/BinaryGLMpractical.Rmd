@@ -16,9 +16,10 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, message=FALSE}}
 library(tidyverse)
 library(ggbeeswarm)
+library(emmeans)
 ```
 
 ```{r}
@@ -51,28 +52,36 @@ anova(vole_s_sexXage, test="Chisq")
 So, the predicted survival probability of adult females is:
 ```{r}
 plogis(coef(vole_s_sexXage)["(Intercept)"])
-
-#or, equivalently
-predict(vole_s_sexXage, newdata = tibble(sex="Female", age="A"), type = "response")
 ```
 
 For adult males:
 ```{r}
 plogis(coef(vole_s_sexXage)["(Intercept)"] + coef(vole_s_sexXage)["sexMale"])
-predict(vole_s_sexXage, newdata = tibble(sex="Male", age="A"), type = "response")
 ```
 
 For juvenile females:
 ```{r}
 plogis(coef(vole_s_sexXage)["(Intercept)"] + coef(vole_s_sexXage)["ageJ"])
-predict(vole_s_sexXage, newdata = tibble(sex="Female", age="J"), type = "response")
 ```
 
 and for juvenile males:
 ```{r}
 plogis(coef(vole_s_sexXage)["(Intercept)"] + coef(vole_s_sexXage)["sexMale"]+
          coef(vole_s_sexXage)["ageJ"]+ coef(vole_s_sexXage)["sexMale:ageJ"])
-predict(vole_s_sexXage, newdata = tibble(sex="Male", age="J"), type = "response")
+```
+
+Or equivalently:
+
+```{r}
+emmeans(vole_s_sexXage, ~ sex*age, type="response")
+```
+
+
+```{r}
+predict(vole_s_sexXage,
+        newdata = expand_grid(sex=c("Female", "Male"),
+                         age=c("J", "A") ), type = "response",
+        se.fit = TRUE)
 ```
 
 
@@ -89,7 +98,7 @@ ggplot(survdat_early, aes(x = mass, y=survival)) +
 ```
 
 ```{r}
-vole_glm <- glm(survival ~ mass, data = survdat_early)
+vole_glm <- glm(survival ~ mass, data = survdat_early, family = "binomial")
 summary(vole_glm)
 ```
 
@@ -97,11 +106,19 @@ Mass is negatively correlated with survival.
 
 This model predicts that a 10g vole has a survival probability of 
 ```{r}
+emmeans(vole_glm, specs = ~ 1, at = list(mass = 10), type = "response")
+
+plogis(coef(vole_glm)["(Intercept)"] + 10*coef(vole_glm)["mass"])
+
 predict(vole_glm, newdata = tibble(mass=10), type = "response")
 ```
 
 and a 60g vole a probability of 
 ```{r}
+emmeans(vole_glm, specs = ~ 1, at = list(mass = 60), type = "response")
+
+plogis(coef(vole_glm)["(Intercept)"] + 60*coef(vole_glm)["mass"])
+
 predict(vole_glm, newdata = tibble(mass=60), type = "response")
 ```
 
@@ -126,16 +143,20 @@ ggplot(survdat_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
 
 That plot corresponds to the model
 ```{r}
-summary(glm(survival ~ 1 + mass * sex*age,
+summary(m_vole_interaction <- glm(survival ~ 1 + mass * sex*age,
                  data=survdat_early, family = "binomial"))
+
+anova(m_vole_interaction, test = "Chisq")
 ```
 
-That may be an interesting model, be it is not really what we are after. We were trying to ask *What is the effect of mass on survival*, as a way to quantify natural selection overall, not within sex-age classes.
+That may be an interesting model, but it is not really what we are after. We were trying to ask *What is the effect of mass on survival*, as a way to quantify natural selection overall, not within sex-age classes.
 
 So, a better model is:
 ```{r}
 summary(final_model <- glm(survival ~ 1 + mass + sex*age,
                  data=survdat_early, family = "binomial"))
+
+anova(final_model, test = "Chisq")
 ```
 
 From that model we conclude that mass is positively selected in this vole population.
@@ -143,16 +164,37 @@ From that model we conclude that mass is positively selected in this vole popula
 Let's visualize the prediction from that model for each age-sex class:
 
 ```{r}
-newdat_finalmodel  <- expand_grid(sex=unique(survdat_early$sex), 
-                                  age=unique(survdat_early$age), 
-            mass=seq(min(survdat_early$mass,na.rm = TRUE), 
-                     max(survdat_early$mass,na.rm = TRUE), length.out = 100))
-
-newdat_finalmodel$pred <- predict(final_model, type = "response", newdata = newdat_finalmodel)
+newdat_finalmodel <- summary(emmeans(final_model, ~age*sex + mass,
+                         at = list(mass = seq(10,50,length.out = 100)), type="response"))
 
 ggplot(survdat_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
   geom_beeswarm(groupOnX = FALSE)+
-  geom_line(data = newdat_finalmodel, aes(x=mass, y=pred))
+  geom_line(data = newdat_finalmodel, aes(x=mass, y=prob))
 
 ```
 
+We can add confidence intervals:
+
+```{r}
+ggplot(survdat_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
+  geom_beeswarm(groupOnX = FALSE)+
+  geom_line(data = newdat_finalmodel, aes(x=mass, y=prob))+
+  geom_ribbon(data = newdat_finalmodel, inherit.aes = FALSE, alpha=0.1,
+              aes(x=mass, ymin=asymp.LCL, ymax=asymp.UCL, fill=interaction(sex,age)))
+```
+
+
+Note that the juvenile and adult mass are almost non-overlapping distributions. So the predictions are extrapolating into regions where there are no voles in the data. This may be problematic. Do you think that if we could fatten juvenile females up to 60 grams their survival probability would be 75% ? 
+
+We should probably show predictions only in the range where data exist:
+
+```{r}
+noextrapolation <- newdat_finalmodel %>% filter((age=="J" & (mass < max(survdat_early$mass[survdat_early$age=="J"], na.rm = TRUE) )) | (age=="A" & (mass > min(survdat_early$mass[survdat_early$age=="A"], na.rm = TRUE) )))
+
+ggplot(survdat_early, aes(x=mass, y= survival, color=interaction(sex,age)))+
+  geom_beeswarm(groupOnX = FALSE)+
+  geom_line(data = noextrapolation, aes(x=mass, y=prob))+
+  geom_ribbon(data = noextrapolation, inherit.aes = FALSE, alpha=0.1,
+              aes(x=mass, ymin=asymp.LCL, ymax=asymp.UCL, fill=interaction(sex,age)))
+
+```
