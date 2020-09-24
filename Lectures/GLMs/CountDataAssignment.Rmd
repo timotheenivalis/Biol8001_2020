@@ -1,0 +1,52 @@
+---
+title: "CountDataAssignment"
+author: "Timothee Bonnet"
+date: "24 September 2020"
+output: html_document
+---
+
+
+```{r}
+gambusia <- read_csv("Gambusia.csv")
+```
+
+
+
+
+```{r}
+emmeans(m_poisson_2, specs = ~Treatment, type="response")
+```
+
+
+```{r}
+summary(glmmTMB(No.Cop_Success ~ 1 + Time_Female.sec+Focal_Size*Treatment, 
+                data=gambusia, family = nbinom1))
+```
+
+
+
+
+
+```{r}
+
+ggplot(gambusia, aes(x=Focal_Size, y=No.Cop_Success, col=Treatment))+ geom_point() +
+  geom_smooth(method="glm", method.args=list(family="poisson"))
+
+
+```
+
+
+
+Different variants of the Poisson family, for different relationships between mean and variance:
+
+
+glmmTMB even offers the possibility to fit a linear function with predictors for the amount of dispersion:
+```{r}
+summary(glmmTMB(No.Cop_Success ~ 1, dispformula = ~ 1, 
+                data=gambusia, family = nbinom1))
+summary(glmmTMB(No.Cop_Success ~ 1, dispformula = ~ Focal_Size, 
+                data=gambusia, family = nbinom1))
+
+0.67527+mean(gambusia$Focal_Size)*0.03058
+```
+

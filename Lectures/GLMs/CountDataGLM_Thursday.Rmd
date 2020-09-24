@@ -1,0 +1,208 @@
+---
+title: "CountDataGLMs"
+author: "Timothee Bonnet"
+date: "24 September 2020"
+output: html_document
+---
+
+## Comments about the binary GLM assignment
+
+* A p-value is NOT a measure of the strength of an effect. A p-value is a measure of strength of evidence. Never say that an effect is biologically not interesting because its estimated effect is non-significant. A non-significant p-value never says that an effect is absent, but that we cannot conclude about the presence or sign of an effect.
+* The confirmatory vole study shows we should not be too confident about the effect of mass on survival. At least, that effect may not be consistent across years. We do not know.
+* Standard ANOVAs can be misleading because the order of predictors in the formula matters. In doubt, use ```Anova(type="3")``` in the package ```car```.
+
+```{r}
+x1 <- rnorm(100)
+x2 <- x1 + rnorm(100)
+
+y <- x1 + rnorm(100)
+
+m0 <- lm(y ~ x1 + x2)
+summary(m0)
+anova(m0)
+
+m1 <- lm(y ~ x2 + x1)
+summary(m1)
+anova(m1)
+
+library(car)
+Anova(m1, type = "3")
+```
+
+
+
+## Count data and their challenges
+
+Goals for today:
+
+* Understand why linear models are often not appropriate to model count data
+* Know how to fit count data GLMs in glmmTMB
+* Understand that count data GLMs can perform poorly and need to be evaluated
+
+Today, we will need:
+```{r, message=FALSE}
+library(tidyverse)
+library(ggbeeswarm)
+library(janitor)
+library(emmeans)
+library(glmmTMB)
+library(car)
+library(DHARMa)
+```
+
+
+We will use data from Harrison et al. 2018 *Does the winner–loser effect determine male mating success?* _**Biology Letters**_ 14-5. https://royalsocietypublishing.org/doi/suppl/10.1098/rsbl.2018.0195
+
+
+In wild animals, controlling for inherent fighting ability and other factors, a history of winning often makes individuals more likely to win future contests, while the opposite is true for losers (the ‘winner–loser effect’). Think of it as "if you generally win fights you start thinking you are good and get bolder; if you generally lose you may believe you are more likely to lose future fights and give up early".
+
+Male mosquitofish (*Gambusia holbrooki*) fight duels to gain access to females. This experiment was designed to test whether previous wins made a male more likely to win again and gain reproductive success and previous defeats made a male more likely to lose and reduce its reproductive success.
+We experimentally staged contests between male mosquitofish such that focal males either won or lost three successive encounters with stimulus males.
+
+We counted the number of copulation successes for each male and want to test whether males in the loser treatment have lower copulation success than males in the winner treatment.
+
+```{r}
+gambusia <- read_csv("Gambusia.csv")
+summary(gambusia)
+```
+
+Let's visualise those data:
+
+```{r}
+ggplot(gambusia, aes(x=No.Cop_Success))+geom_histogram()
+
+ggplot(gambusia, aes(x=Treatment, y=No.Cop_Success))+ geom_boxplot()
+
+```
+
+
+### Problems with lm()
+
+We fit the simplest possible model: an intercept only linear model. This model estimate an intercept and a residual variance, assuming a normal distribution around this intercept. This is not a very interesting model, but it is sufficient for us to see why a linear model is not going to work well to model the number of copulation successes.
+
+```{r}
+m0 <- lm(No.Cop_Success ~ 1, data = gambusia)
+```
+
+We can simulate data based on the linear model equation and parameter estimates:
+```{r}
+simul <- tibble(No.Cop_Success = rnorm(n = 1000, coef(m0), sigma(m0)) )
+```
+
+and compare the actual distribution of the number of copulation successes with what the model thinks the data should look like:
+```{r}
+ggplot(gambusia, aes(x=No.Cop_Success))+geom_bar(aes(y = (..count..)/sum(..count..)))+
+  geom_density(data=simul)
+
+```
+
+Several problems:
+
+* The model predicts a continuous response, but we observe only integer values
+* The model predicts negative values, while the number of successes can only be positive or zero
+* The model predicts the most common response should be around 2; in reality it is overwhelmingly zero
+* The model predicts values of 10 or more should be extremely rare but we observed some
+
+So the model is not going to be a good representation of the data; it will make nonsensical predictions; and will quantify uncertainty incorrectly.
+
+We need a model that knows how count data work. Typically a GLM from the Poisson family or related families. 
+
+## Poisson GLMs
+
+We could use the function ``` glm() ``` like we did for binary GLMs, but I recommend you never analyse count data with it. It is not flexible enough and can be unreliable (it does not deal well with problems we will talk about at the end of this session). Instead, we will use the function ```glmmTMB()``` in the package of the same name.
+
+```{r}
+# install.packages(glmmTMB) ## if not already installed
+library(glmmTMB)
+library(emmeans)
+library(car) #for Anova
+library(ggbeeswarm)
+```
+
+We can follow the same analysis workflow as with binary GLMs:
+```{r}
+summary(m_poisson <- glmmTMB(No.Cop_Success ~ 1 + Treatment,
+                             data=gambusia, family = poisson))
+```
+
+As in binary GLMs, the parameter estimates are on a transformed scale. Instead of logit, the scale is now logarithmic.
+The inverse of the natural logarithm is the exponential, so we can interpret model predictions after applying the function `exp()`:
+
+```{r}
+exp(fixef(m_poisson)$cond[1])
+exp(fixef(m_poisson)$cond[1] + fixef(m_poisson)$cond[2])
+
+gambusia %>% group_by(Treatment) %>%
+  summarise(mean(No.Cop_Success)) 
+
+```
+
+*NB: in glmmTMB there can be several formula, so we need to say which one we want coefficients for. You will want coefficients from the formula called ``` $cond ```*
+
+We can output an ANOVA, using the function ``` Anova() ``` from the package ``` car ```.
+
+```{r}
+Anova(m_poisson, type = 3)
+```
+
+And extract predicted mean with confidence intervals using ``` emmeans() ```:
+```{r}
+(emm_m_poisson <- as_tibble(emmeans(m_poisson, specs = ~ Treatment, type="response")))
+```
+
+And finally show model predictions on top of raw data:
+```{r}
+ggplot(gambusia, aes(x=Treatment, y=No.Cop_Success)) + geom_beeswarm()+
+  geom_point(data=emm_m_poisson, aes(y=rate), col="red", size=3)+
+  geom_errorbar(data=emm_m_poisson, aes(x=Treatment, ymin=lower.CL, ymax=upper.CL),
+                inherit.aes = FALSE, col="red", width=0.2)
+```
+
+So far so good, but we must be careful! With binary GLMs there were few assumptions and we did not really worry about them. Other GLMs are not so safe. With count data GLMs we should always check how good the model is at generating data. With biological data a very common problem is that the model will be blind to some variation and as a consequence be over-confident.
+
+Let's simulate data according to the worldview or our model:
+```{r}
+simul <- simulate(m_poisson)
+table(simul)
+
+tibbsimul <- tibble(x=as.numeric(names(table(simul))),
+       count=as.numeric(table(simul)))
+```
+
+
+We can repeat the process many times:
+```{r}
+
+for (i in 1:100)
+{
+  simul <-  simulate(m_poisson)
+  tibbsimul <- rbind(tibbsimul, tibble(x=as.numeric(names(table(simul))),
+       count=as.numeric(table(simul))))
+}
+
+```
+
+Or equivalently using only the tydiverse:
+```{r}
+library(janitor)
+
+fsimul <- function(x) {
+  tibble(simul=simulate(m_poisson)) %>% 
+  tabyl(simul)
+  }
+
+tibbsimul2 <- map_dfr(.x = 1:100, .f = fsimul)
+
+```
+
+And show all the distributions the model think are possible, on top of the actual data:
+```{r}
+ggplot(gambusia, aes(x=No.Cop_Success))+geom_bar() +
+  geom_jitter(data = tibbsimul2, 
+             mapping = aes(x=simul, y=n, col=as.factor(simul)), alpha=0.4)
+
+```
+
+Our model widely underestimate the number of 0, at the same time seems unable to produce values above 9, and overall show less variation than in the data.
+
+This is a typical problem. There is **over-dispersion** in the data compared to the model fit. That means the measures of uncertainty are unreliable. In general with over-dispersion the p-values and standard errors will be too small and confidence intervals will be too narrow.

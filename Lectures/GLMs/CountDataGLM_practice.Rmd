@@ -1,0 +1,154 @@
+---
+title: "CountDataGLM_Practice"
+author: "Timothee Bonnet"
+date: "25 September 2020"
+output: html_document
+---
+
+
+
+```{r, message=FALSE}
+library(tidyverse)
+library(ggbeeswarm)
+library(janitor)
+library(emmeans)
+library(glmmTMB)
+library(car)
+library(DHARMa)
+```
+
+Noisy miners are birds native to south-east Australia. They form large breeding colonies in open woodlands, often at the edge between closed and open landscape and try to obtain monopoly on food resources by harassing, excluding and regularly killing all other small bird species. In native vegetation this is not a problem because there are few places appropriate for noisy miners colonies. However, in cities and farmland the vegetation structure has been modified in a way that most areas with trees are attractive to noisy miners. The over-abundance of noisy miners is a big problem for the conservation of some small woodland birds. A team at the Fenner School, ANU, tested whether removing a few noisy miners from a colony was sufficient to reduce the number of attacks on small birds, so that noisy miner removal could be used to protect critical populations of small birds. 
+
+On several farms, the researchers selected one treatment site where they removed a few individuals, and a control site (variable ```Treatment```). They counted the number of small birds attacked by noisy miners during a fixed period of time (```Victims```). 
+For the treatment to be interesting and applicable the effect of removal should last at least a few days, but it is possible that new noisy miners would enter the colony quickly after birds are removed. Therefore, researchers counted the number of victims during two periods: just after the removal (```Phase=0```) and one week later (```Phase=1```). 
+
+We have three questions:
+
+1. Does the treatment have an immediate effect on the number of victims? 
+2. Does the treatment have a lasting effect?
+3. Does the treatment work generally across farms, or is there evidence that it works better in some farms than other? (that question will be important if we decide to use the method to try and protect specific bird populations)
+
+```{r}
+miners <- read_csv("Harassment.Data.csv")
+```
+
+
+## Treatment
+
+```{r}
+ggplot(miners, aes(y=Victims, x=Treatment)) + geom_boxplot()
+```
+
+```{r}
+summary(m_treatment <- glmmTMB(Victims ~ Treatment, data=miners, family = nbinom1()))
+```
+
+First, let's check that the model captures variation reasonably well.
+```{r}
+testResiduals(m_treatment)
+
+fsimul <- function(x) {
+  tibble(simul=simulate(m_treatment)) %>% 
+  tabyl(simul)
+  }
+
+tibbsimul2 <- map_dfr(.x = 1:100, .f = fsimul)
+
+ggplot(miners, aes(x=Victims))+geom_bar() +
+  geom_jitter(data = tibbsimul2, 
+             mapping = aes(x=simul, y=n, col=as.factor(simul)),
+             alpha=0.4, inherit.aes = FALSE) + xlim(-1,12)+ ggtitle("Nbinom1 GLM")
+```
+
+
+It looks pretty good.
+
+
+```{r}
+Anova(m_treatment, type = 3)
+emmeans(m_treatment, pairwise~ Treatment, type="response")
+```
+
+```{r}
+emm_treatment <- as_tibble(emmeans(m_treatment, ~ Treatment, type="response"))
+
+ggplot(miners, aes(y=Victims, x=Treatment)) + geom_violin() + 
+  geom_jitter(width = 0.1, height = 0) +
+  geom_point(data=emm_treatment, aes(y=response), col="red", size=3) +
+  geom_errorbar(data=emm_treatment, aes(x= Treatment, ymin=lower.CL, ymax=upper.CL),
+                col="red", inherit.aes = FALSE)
+
+```
+
+
+The effect looks quite important (ratio of 1.53), but there is lots of variation left in the number of victims in the treatment.
+
+## Treatment and phase
+
+```{r}
+ggplot(miners, aes(y=Victims, x=interaction(Treatment, Phase))) + geom_boxplot()
+```
+
+```{r}
+summary(m_treatment_phase <- glmmTMB(Victims ~ Treatment*Phase, data=miners, family = nbinom1()))
+testResiduals(m_treatment_phase)
+Anova(m_treatment_phase, type = 3)
+emmeans(m_treatment_phase, pairwise~ Treatment*Phase, type="response")
+```
+
+
+
+```{r}
+emm_treatment_phase <- as_tibble(emmeans(m_treatment_phase, ~ Treatment*Phase, type="response"))
+
+ggplot(miners, aes(y=Victims, x=interaction(Treatment, Phase))) + geom_violin() + 
+  geom_jitter(width = 0.1, height = 0) +
+  geom_point(data=emm_treatment_phase, aes(y=response), col="red", size=3) +
+  geom_errorbar(data=emm_treatment_phase, 
+                aes(x= interaction(Treatment, Phase), ymin=lower.CL, ymax=upper.CL),
+                col="red", inherit.aes = FALSE)
+
+```
+
+
+We do not see much evidence for an effect of phase. That is good news. 
+
+Now, if Phase=1 corresponds to one week after treatment, if we assume that the return of noisy miners is linear with time what is our best guess for the time it would take to cancel the effect of treatment?
+
+
+```{r}
+-fixef(m_treatment_phase)$cond[2]/(fixef(m_treatment_phase)$cond[3]+fixef(m_treatment_phase)$cond[4])
+```
+
+Just 2 weeks!
+So, although we don't really have evidence for an effect of Phase, we may have to be careful about the efficacy of the treatment in time.
+
+
+### Farms
+
+You can decide to drop "Phase" from models, at least in a first time, to simplify a bit the plots and models.
+
+```{r}
+ggplot(miners, aes(y=Victims, x=Treatment)) + geom_boxplot() + facet_wrap(~Farm)
+```
+
+```{r}
+summary(m_farms <- glmmTMB(Victims ~ Treatment*Farm, data=miners, family = nbinom1()))
+testResiduals(m_farms)
+Anova(m_farms, type = 3)
+emmeans(m_farms, pairwise~ Treatment, type="response")
+```
+
+
+```{r}
+emm_Farm <- as_tibble(emmeans(m_farms, ~ Treatment*Farm, type="response"))
+
+ggplot(miners, aes(y=Victims, x=Treatment)) + geom_violin() +
+  geom_jitter(width = 0.1, height = 0) +
+  geom_point(data=emm_Farm, aes(y=response), col="red", size=3) +
+  geom_errorbar(data=emm_Farm, 
+                aes(x= Treatment, ymin=lower.CL, ymax=upper.CL),
+                col="red", inherit.aes = FALSE) + facet_wrap(~Farm)
+```
+
+Discuss how good the treatment is likely to be in practice.
