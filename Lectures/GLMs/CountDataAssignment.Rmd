@@ -5,48 +5,106 @@ date: "24 September 2020"
 output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+## Mosquito fish
+
+We are going to re-analyse the gambusia dataset, focusing on ```No.Cop_Attempts``` this time.
+
+1. Load the dataset ```Gambusia.csv``` and visualize the distribution of ```No.Cop_Attempts```. Given what you see, why would a linear model not be appropriate to analyse those data? (0.5pt)
 
 ```{r}
+library(tidyverse)
 gambusia <- read_csv("Gambusia.csv")
+ggplot(gambusia, aes(x=No.Cop_Attempts)) + geom_histogram()
+```
+
+2. Fit a GLM to test whehter time spent close to the female (```Time_Female.sec```) affect ```No.Cop_Attempts```? Assess the fit of the model; does this model capture variation in the response well? If not, try a different count data GLM family. (1pt) 
+
+```{r}
+library(glmmTMB)
+
+m_tfs <- glmmTMB(No.Cop_Attempts ~ 1 + Time_Female.sec, data = gambusia, family = "nbinom1")
+summary(m_tfs)
+library(DHARMa)
+testResiduals(m_tfs)
+```
+
+```{r}
+library(janitor)
+fsimul <- function(x) {
+  tibble(simul=simulate(m_tfs)) %>% 
+  tabyl(simul)
+  }
+
+tibbsimul2 <- map_dfr(.x = 1:100, .f = fsimul)
+
+ggplot(gambusia, aes(x=No.Cop_Attempts))+geom_bar() +
+  geom_jitter(data = tibbsimul2, width = 0.1,height = 0,
+             mapping = aes(x=simul, y=n, col=as.factor(simul)),
+             alpha=0.4, inherit.aes = FALSE) + xlim(-1,30)+ ggtitle("Nbinom1 GLM")
+
 ```
 
 
 
+3. Make a graph of number of copulation attempts as a function of time spent close to the female and show the model prediction with confidence interval (1pt).
 
 ```{r}
-emmeans(m_poisson_2, specs = ~Treatment, type="response")
-```
+library(emmeans)
+mm_tfs <- as_tibble(emmeans(m_tfs, ~ Time_Female.sec, at=list(Time_Female.sec=seq(0, 520, length.out = 100)), type="response"))
 
-
-```{r}
-summary(glmmTMB(No.Cop_Success ~ 1 + Time_Female.sec+Focal_Size*Treatment, 
-                data=gambusia, family = nbinom1))
-```
-
-
-
-
-
-```{r}
-
-ggplot(gambusia, aes(x=Focal_Size, y=No.Cop_Success, col=Treatment))+ geom_point() +
-  geom_smooth(method="glm", method.args=list(family="poisson"))
-
+ggplot(gambusia, aes(y=No.Cop_Attempts, x=Time_Female.sec)) + geom_point() +
+  geom_line(data=mm_tfs, aes(y=response), col="red")+
+  geom_ribbon(data=mm_tfs, aes(x=Time_Female.sec, ymin=lower.CL, ymax=upper.CL), inherit.aes = FALSE,
+              fill="red", alpha=0.1)
 
 ```
 
 
+4. Discuss whether the effect of ```Time_Female.sec``` is surprising? Is the intercept is biologically meaningful and why? (0.5pt) (bonus 0.5pt if you can explain why this is an intrinsic limitation of count data GLMs)
 
-Different variants of the Poisson family, for different relationships between mean and variance:
+
+## Red deer
 
 
-glmmTMB even offers the possibility to fit a linear function with predictors for the amount of dispersion:
+```{r, eval=FALSE}
+dat <- read.table("fitnessdata.txt", header = TRUE)
+data <- dat[,c("Code", "LBS", "GGImm", "Sex", "ShotOrNot")]
+colnames(data) <- c("individual", "lifetime_reproduction", "ImmGeneticAncestry",  "sex", "ShotOrNot")
+data$individual <- as.integer(data$individual)
+
+write.csv(data,file = "red_deer.csv", row.names = FALSE, quote = FALSE)
+```
+
+1. Load the dataset ```red_deer.csv```. Filter out the individuals that are still alive (```ShotOrNot=="Living"```) since we not really know their lifetime reproduction yet. Visualize the distribution of lifetime reproduction for each sex. Do you think you will need to account for sex in models? (1pt).
+
 ```{r}
-summary(glmmTMB(No.Cop_Success ~ 1, dispformula = ~ 1, 
-                data=gambusia, family = nbinom1))
-summary(glmmTMB(No.Cop_Success ~ 1, dispformula = ~ Focal_Size, 
-                data=gambusia, family = nbinom1))
+deer <- read_csv("red_deer.csv")
+deer <- deer %>% filter(ShotOrNot != "Living")
 
-0.67527+mean(gambusia$Focal_Size)*0.03058
+ggplot(deer, aes(lifetime_reproduction)) + geom_histogram() + facet_wrap(~sex)
+```
+
+
+2. Does the proportion of immigrant genetic ancestry affect lifetime reproduction? Fit a negative-binomial 1 model to answer this question. What happens if you account or do not account for sex? (1pt)
+```{r}
+m0 <- glmmTMB(lifetime_reproduction ~ 1 + ImmGeneticAncestry, data = deer, family = nbinom1())
+summary(m0)
+
+m_sex <- glmmTMB(lifetime_reproduction ~ 1 + ImmGeneticAncestry + sex, data = deer, family = nbinom1())
+summary(m_sex)
+
+cor(as.integer(as.factor(deer$sex)), deer$ImmGeneticAncestry)
+```
+
+3.
+
+```{r}
+m0 <- glmmTMB(lifetime_reproduction ~ 1 + sex * ImmGeneticAncestry, data = deer, family = nbinom1())
+summary(m0)
+testResiduals(m0)
 ```
 
