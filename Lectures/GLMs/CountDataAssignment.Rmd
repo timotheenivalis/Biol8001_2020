@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, results = "hide", fig.show='hide')
 ```
 
 ## Mosquito fish
@@ -69,6 +69,12 @@ ggplot(gambusia, aes(y=No.Cop_Attempts, x=Time_Female.sec)) + geom_point() +
 
 ## Red deer
 
+We monitor a wild population of red deer on a Scottish island. Every year, a few immigrants enter the population and succesfully reproduce, thus introducing non-local genes. We expect the population to be locally adapted to its habitat and immigrant genes to produce maladaptation, that is, to decrease reproductive success.
+**We want to test whether immigrant ancestry affects lifetime reproductive success (the number of babies each individual had) in the population.**
+
+For each individual we know ```lifetime_reproduction``` (number of babies), ```sex ``` (Male or Female), ```ImmGeneticAncestry``` (the proportion of genetic ancestry coming from immigrants, as opposed to ancesters that where local at the beginning of the study), and ```ShotOrNot``` (indicating whether an individual died from natural causes = ```DeadNotShot```; died from hunting = ```Shot```; or is still alive ```Living```).
+
+
 
 ```{r, eval=FALSE}
 dat <- read.table("fitnessdata.txt", header = TRUE)
@@ -79,7 +85,7 @@ data$individual <- as.integer(data$individual)
 write.csv(data,file = "red_deer.csv", row.names = FALSE, quote = FALSE)
 ```
 
-1. Load the dataset ```red_deer.csv```. Filter out the individuals that are still alive (```ShotOrNot=="Living"```) since we not really know their lifetime reproduction yet. Visualize the distribution of lifetime reproduction for each sex. Do you think you will need to account for sex in models? (1pt).
+1. Load the dataset ```red_deer.csv```. Filter out the individuals that are still alive (```ShotOrNot=="Living"```) since we not really know their lifetime reproduction yet. Visualize the distribution of lifetime reproduction for each sex. Do you think you will need to account for sex in models? (0.5pt).
 
 ```{r}
 deer <- read_csv("red_deer.csv")
@@ -89,7 +95,7 @@ ggplot(deer, aes(lifetime_reproduction)) + geom_histogram() + facet_wrap(~sex)
 ```
 
 
-2. Does the proportion of immigrant genetic ancestry affect lifetime reproduction? Fit a negative-binomial 1 model to answer this question. What happens if you account or do not account for sex? (1pt)
+2. Does the proportion of immigrant genetic ancestry affect lifetime reproduction? Fit a negative-binomial 1 GLM to quantify and test the effect of immigrant genetic ancestry. What happens if you add an additive effect for sex? (1pt) (+ bonus 0.5pt if you can explain why sex changes the result)
 ```{r}
 m0 <- glmmTMB(lifetime_reproduction ~ 1 + ImmGeneticAncestry, data = deer, family = nbinom1())
 summary(m0)
@@ -100,11 +106,48 @@ summary(m_sex)
 cor(as.integer(as.factor(deer$sex)), deer$ImmGeneticAncestry)
 ```
 
-3.
+3. Add to the GLM the intercation between sex and ImmGeneticAncestry. Use emmeans and ggplot to make a graph of lifetime reproduction as a function of ImmGeneticAncestry and sex with model predictions and confidence intervals (1pt).
+
+_hint: you will need to use the argument ```at=list(...)``` in emmeans._
 
 ```{r}
 m0 <- glmmTMB(lifetime_reproduction ~ 1 + sex * ImmGeneticAncestry, data = deer, family = nbinom1())
 summary(m0)
 testResiduals(m0)
+
+emm_sex_g <- as_tibble(emmeans(m0, ~ sex * ImmGeneticAncestry, 
+                               at=list(ImmGeneticAncestry=seq(0,1, length.out = 100)),
+                               type="response"))
+
+ggplot(deer, aes(y=lifetime_reproduction, x=ImmGeneticAncestry, col=sex)) + geom_point(alpha=0.3) + 
+  geom_line(data=emm_sex_g, aes(y=response)) +
+  geom_ribbon(data=emm_sex_g, 
+                aes(x= ImmGeneticAncestry, ymin=lower.CL, ymax=upper.CL, fill=sex),
+                inherit.aes = FALSE, alpha=0.3) + ylim(0,10)
+
 ```
+
+
+4. Assess the ability of the model to generate the real data. You can use DHARMa and/or a simulation approach. Is it satisfactory; what aspects are not optimal? What could be the consequences of the problems you observe?  (1pt) 
+
+```{r}
+testResiduals(m0)
+
+fsimul <- function(x) {
+  tibble(simul=simulate(m0)) %>% 
+  tabyl(simul)
+  }
+
+tibbsimul2 <- map_dfr(.x = 1:100, .f = fsimul)
+
+ggplot(deer, aes(x=lifetime_reproduction))+geom_bar() +
+  geom_jitter(data = tibbsimul2, 
+             mapping = aes(x=simul, y=n, col=as.factor(simul)),
+             alpha=0.4, inherit.aes = FALSE) + xlim(-1,12)+ ggtitle("Nbinom1 GLM")
+```
+
+
+5. Try other count data GLM families. Do they work better? Discuss what else you could do, or what property should a GLM have to better represent these data. (0.5pt)
+
+
 
