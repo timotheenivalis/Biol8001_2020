@@ -1,0 +1,23 @@
+---
+title: "GLMMs"
+author: "Timothee Bonnet"
+date: "2 October 2020"
+output: html_document
+---
+
+Packages for today:
+```{r}
+library(tidyverse)
+library(glmmTMB)
+library(emmeans)
+library(DHARMa)
+```
+
+
+Goals for today:
+
+* Understanding when to use Generalized Linear Mixed Models
+* Know how to fit Generalized Linear Mixed Models in glmmTMB, including random intercepts and random slopes
+* Interpret and predict from GLMMs
+* Understand Jensen's inequality and the need to integrate for model predictions
+
