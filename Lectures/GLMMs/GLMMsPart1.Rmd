@@ -8,7 +8,10 @@ output: html_document
 Packages for today:
 ```{r}
 library(tidyverse)
+library(ggbeeswarm)
+library(janitor)
 library(glmmTMB)
+library(car)
 library(emmeans)
 library(DHARMa)
 ```
@@ -20,4 +23,228 @@ Goals for today:
 * Know how to fit Generalized Linear Mixed Models in glmmTMB, including random intercepts and random slopes
 * Interpret and predict from GLMMs
 * Understand Jensen's inequality and the need to integrate for model predictions
+
+
+### Random effects refresher
+
+
+### Binary GLMM, varying effect and complete separation
+
+```{r, echo=FALSE, eval=FALSE}
+set.seed(1234)
+nobs <- 528
+startyear <- 1997
+nbyears <- 22
+temperatures <- rnorm(n = nobs, mean = 13.7, sd = 4.8)
+
+years <- sample(x = startyear:(startyear+nbyears-1), size = nobs, replace = TRUE)
+years <- sort(years)
+
+yearvalues <- rnorm(n = nbyears, mean = 0, sd = 2)
+
+y <- -3 + 0.34*temperatures + yearvalues[years-startyear+1]
+
+obs <- sapply(y, function(x) rbinom(1, 1, plogis(x)))
+
+dtf <- data.frame(year=years, temperature=temperatures, presence=obs, site=rep(LETTERS[1:24], times=nbyears))
+
+dtf$presence[dtf$year==2015]  <- 0
+dtf$presence[dtf$year==2012]  <- 1
+
+m0t <- glmmTMB(presence ~ 1 + temperature * as.factor(year)+ (1|site), data = dtf, family = "binomial")
+summary(m0t)
+
+m1t <- glmmTMB(presence ~ 1 + temperature + (1 + temperature| year) + (1|site), data = dtf, family = "binomial")
+summary(m1t)
+m1t0 <- glmmTMB(presence ~ 1 + temperature + (1 | year)+ (1|site), data = dtf, family = "binomial")
+summary(m1t0)
+
+m1t00 <- glmmTMB(presence ~ 1 + temperature +  (1|site), data = dtf, family = "binomial")
+summary(m1t00)
+
+anova(m1t, m1t0, m1t00)
+
+dtf$day <- dtf$year-min(dtf$year) + 1
+dtf <- dtf[,-1]
+
+write.csv(dtf, file = "bettle_detection.csv", row.names = FALSE)
+```
+
+The presence of a rare bettle has been monitored across 18 locations where it is known, on 22 consecutive days, in order to establish a standardized monitoring protocol before looking for the beetle in locations where it has not been detected yet. We suspect the bettle is more likely to be detected at higher temperatures because of increased activity. We want to test the effect of temperature on the probability to detect the species and check whether temperature has a consistent effect across days and locations.
+
+We can visualise the effect of temperatures overall:
+```{r}
+beetles <- read_csv("bettle_detection.csv")
+
+ggplot(beetles, aes(x=temperatures, y = presence, color=site))  + geom_beeswarm(groupOnX = FALSE)
+```
+
+And the variation in mean detection across locations, and across days:
+```{r}
+beetles %>% group_by(site) %>%
+  summarise(prob = mean(presence), 
+            SE=sd(presence)/sqrt(length(presence)-1), lowCI=prob-1.96*SE,
+            upCI=prob+1.96*SE) %>%
+  ggplot(aes(x=site, y=prob)) + geom_point() + geom_errorbar(aes(x=site, ymin=lowCI, ymax=upCI)) + 
+  ylim(0,1)
+
+beetles %>% group_by(day) %>%
+  summarise(prob = mean(presence), 
+            SE=sd(presence)/sqrt(length(presence)-1), lowCI=prob-1.96*SE,
+            upCI=prob+1.96*SE) %>%
+  ggplot(aes(x=day, y=prob)) + geom_point() + geom_errorbar(aes(x=day, ymin=lowCI, ymax=upCI)) + 
+  ylim(-0.2,1.2)
+
+```
+
+It looks like there is more variation among days than among locations; but there could be some clustering in both days and locations; we should definitely account for both in our models. Notice how the approximated confidence intervals we drew for days are wrong: two of them span over 1, although 1 is the logical maximum value.
+
+
+Most sites were monitored once a day; but sometimes sites were missed, or monitored twice on the same day. That may reflect problems with logistics.
+```{r}
+tabyl(beetles, var1 = day, var2 = site)
+```
+There are probably not enough measurments to estimate site-by-day interactions. We will not be able to model space-time interactions, although we must keep in mind that some interesting variation could exist there. We simply cannot know with those data.
+
+
+```{r}
+m_beetle_t <- glmmTMB(data = beetles, formula = presence ~ 1 + temperatures, family = "binomial")
+summary(m_beetle_t)
+```
+
+
+```{r}
+m_beetle_t_d <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature + as.factor(day), family = "binomial")
+summary(m_beetle_t_d)
+```
+
+```{r}
+m_beetle_tXd <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature * as.factor(day), family = "binomial")
+summary(m_beetle_tXd)
+```
+
+We cannot easily fit that model because on some days we have observed only presence or only absence. There is no variation in the response to let us estimate the 
+
+```{r}
+m_beetle_tXd_short <- glmmTMB(data = beetles[! beetles$day %in% c(10, 11, 13, 16, 19),],
+                      formula = presence ~ 1 + temperature * as.factor(day), family = "binomial")
+summary(m_beetle_tXd)
+```
+
+Instead, we can use a random slope model:
+```{r}
+m_beetle_tXd <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature + (1 + temperature | day) + (1|site), 
+                      family = "binomial")
+summary(m_beetle_tXd)
+
+Anova(m_beetle_tXd)
+```
+
+The Anova() returns only a test for the fixed effect of temperature. How do we test whether the effect of temperature varied among days? 
+We can compare a model with the varying slope to a model without it, using the function anova() (lower case!).
+
+```{r}
+m_beetle_t_d <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature + (1 | day) + (1|site), 
+                      family = "binomial")
+summary(m_beetle_t_d)
+anova(m_beetle_t_d, m_beetle_tXd)
+```
+
+```{r}
+testResiduals(m_beetle_tXd)
+testResiduals(m_beetle_t_d)
+```
+
+
+
+
+
+### Random effect for over-dispersion in count data GLMMs
+
+
+```{r, echo=FALSE, eval=FALSE}
+set.seed(123)
+nobs <- 1420
+x <- rnorm(nobs)
+y <- -1 + 0.7*x + rnorm(nobs)
+obs <- sapply(y, function(x) rpois(1, exp(x)))
+
+plot(obs)
+
+obsid <- 1:nobs
+
+m0 <- glmmTMB(obs ~ 1 + x, family = poisson)
+testResiduals(m0)
+summary(m0)
+
+m0re <- glmmTMB(obs ~ 1 + x + (1 |obsid), family = poisson)
+testResiduals(m0re)
+summary(m0re)
+
+emmeans(m0re, ~x, type="response")
+emmeans(m0, ~x, type="response")
+mean(obs)
+
+predict(m0re)
+
+fixef(m0re)$cond["(Intercept)"]
+
+m0nb1 <- glmmTMB(obs ~ 1 + x, family = nbinom1())
+testResiduals(m0nb1)
+
+m0nb2 <- glmmTMB(obs ~ 1 + x, family = nbinom2())
+testResiduals(m0nb2)
+
+
+dat <- data.frame(reproductive_success = obs, gonopodium_size = 10+x, id = obsid)
+write.csv(dat, file = "fishrepro.csv", row.names = FALSE)
+```
+
+
+
+```{r}
+fish <- read_csv("fishrepro.csv")
+summary(fish)
+
+ggplot(fish, aes(x=reproductive_success))+geom_histogram()
+ggplot(fish, aes(x=gonopodium_size, y=reproductive_success)) + geom_point()
+
+tibble(tabyl(dat = fish, var1 = id))
+```
+
+The variable ```id``` is just row number. It does not seem particularly useful for now... but wait for the twist.
+
+
+```{r}
+model_poisson <- glmmTMB(reproductive_success ~ 1 + gonopodium_size, data = fish, family = poisson)
+summary(model_poisson)
+testResiduals(model_poisson)
+```
+
+```{r}
+model_nbinom1 <- glmmTMB(reproductive_success ~ 1 + gonopodium_size, data = fish, family = nbinom1())
+summary(model_nbinom1)
+testResiduals(model_nbinom1)
+```
+
+```{r}
+model_nbinom2 <- glmmTMB(reproductive_success ~ 1 + gonopodium_size, data = fish, family = nbinom2())
+summary(model_nbinom2)
+testResiduals(model_nbinom2)
+```
+
+
+**Instead of using a different family, we can try to model over-dispersion with an observation-level random effect:**
+
+```{r}
+model_poisson_re <- glmmTMB(reproductive_success ~ 1 + gonopodium_size + (1|id), data = fish, family = poisson)
+summary(model_poisson_re)
+testResiduals(model_poisson_re)
+```
+
+This model says something like "each observation originated from the effect of the predictor, plus some unexplained noise, and that noise is additive on the log-scale, which means, effects are multiplicative on the data scale". It does not always work, but it is often a reasonable model for biological data.
 
