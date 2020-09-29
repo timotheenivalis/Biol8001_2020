@@ -24,11 +24,9 @@ Goals for today:
 * Interpret and predict from GLMMs
 * Understand Jensen's inequality and the need to integrate for model predictions
 
+A Generalized Linear Mixed Model (GLMM) is a GLM with random effects. 
 
-### Random effects refresher
-
-
-### Binary GLMM, varying effect and complete separation
+### Binary GLMM, varying effect
 
 ```{r, echo=FALSE, eval=FALSE}
 set.seed(1234)
@@ -70,13 +68,13 @@ dtf <- dtf[,-1]
 write.csv(dtf, file = "bettle_detection.csv", row.names = FALSE)
 ```
 
-The presence of a rare bettle has been monitored across 18 locations where it is known, on 22 consecutive days, in order to establish a standardized monitoring protocol before looking for the beetle in locations where it has not been detected yet. We suspect the bettle is more likely to be detected at higher temperatures because of increased activity. We want to test the effect of temperature on the probability to detect the species and check whether temperature has a consistent effect across days and locations.
+The presence of a rare bettle has been monitored across 18 locations where it is known, on 22 consecutive days, in order to establish a standardized monitoring protocol before looking for the beetle in locations where it has not been detected yet. We suspect the bettle is more likely to be detected at higher temperatures because of increased activity. **We want to test the effect of temperature on the probability to detect the species and check whether temperature has a consistent effect across days and locations.**
 
 We can visualise the effect of temperatures overall:
 ```{r}
 beetles <- read_csv("bettle_detection.csv")
 
-ggplot(beetles, aes(x=temperatures, y = presence, color=site))  + geom_beeswarm(groupOnX = FALSE)
+ggplot(beetles, aes(x=temperature, y = presence, color=site))  + geom_beeswarm(groupOnX = FALSE)
 ```
 
 And the variation in mean detection across locations, and across days:
@@ -107,59 +105,330 @@ tabyl(beetles, var1 = day, var2 = site)
 There are probably not enough measurments to estimate site-by-day interactions. We will not be able to model space-time interactions, although we must keep in mind that some interesting variation could exist there. We simply cannot know with those data.
 
 
+The most basic model we could fit to answer our question is:
 ```{r}
-m_beetle_t <- glmmTMB(data = beetles, formula = presence ~ 1 + temperatures, family = "binomial")
+m_beetle_t <- glmmTMB(data = beetles, formula = presence ~ 1 + temperature, family = "binomial")
 summary(m_beetle_t)
+Anova(m_beetle_t, type=3)
+```
+
+Model diagnostics are about right:
+```{r}
+testResiduals(m_beetle_t)
+```
+The only possible problem is the presence of outliers; maybe we would not worry much about that.
+
+However, that model is not correct conceptually. We know data were collected on different days and different locations, and we saw apparent variation among days and locations. We must account for days and locations before we can trust any result.
+
+We could do this using fixed effects:
+```{r}
+m_beetle_t_s_d <- glmmTMB(data = beetles, formula = presence ~ 1 + temperature + site + as.factor(day),
+                      family = "binomial")
+
+summary(m_beetle_t_s_d)
+Anova(m_beetle_t_s_d, type=3)
+```
+
+That is okay, but not efficient in several ways:
+
+* The summary is very long and full of parameter estimates we do not really care about
+* The effect of each day and the effect of each location is estimated independently of the others days and locations, respectively; but it seems reasonable to assume that we could learn what is a typical day effect or site effect from the data. We could then use that information to refine our estimates of day and site effects.
+  * Check the parameter estimates and standard errors for days 10, 11, 13 and 19: they are arbitrarily large (in absolute value); That is because we observed only 1s or only 0s for those days. There is an infinity of parameter values consistent with those data. Based on the previous point we could refine estimates by learning from other levels.
+
+Demonstration: whether a logit-scale prediction is 28 or 100000 you get the same data:
+```{r}
+rbinom(n = 1000, size = 1, prob = plogis(28))
+rbinom(n = 1000, size = 1, prob = plogis(100000))
+```
+  
+
+  * Finally, because we estimate parameters independently of each others, if we try to check whether the effect of temperatures is consistent among days we get a convergence problem:
+
+```{r}
+m_beetle_tXd_s <- glmmTMB(data = beetles, formula = presence ~ 1 + temperature*as.factor(day) + site,
+                      family = "binomial")
+summary(m_beetle_tXd_s)
 ```
 
 
+So, it is often more convenient and efficient to use random effects for categorical variables for which we do not care to much about the exact parameter estimates.
+
+To fit a random effect in ```lme4``` or ```glmmTMB``` you can write ``` + (1 | group) ``` for a random intercept of the variable group.
+
 ```{r}
+m_beetle_t_s_d  <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature + (1|day) + (1|site), family = "binomial")
+summary(m_beetle_t_s_d)
+```
+
+That is much cleaner looking, but also more efficient computationally.  
+
+One small annoyance: The ```Anova()``` function tests only fixed effects.
+```{r}
+Anova(m_beetle_t_s_d, type = 3)
+```
+
+To test random effects you need to compare nested models with/without a given random effect using ```anova()``` (lower case!).
+
+```{r}
+m_beetle_t_s <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature+ (1|site), family = "binomial")
 m_beetle_t_d <- glmmTMB(data = beetles,
-                      formula = presence ~ 1 + temperature + as.factor(day), family = "binomial")
-summary(m_beetle_t_d)
+                      formula = presence ~ 1 + temperature+ (1|day), family = "binomial")
+```
+
+Test for the random intercept of site:
+```{r}
+anova(m_beetle_t_d, m_beetle_t_s_d)
+```
+No evidence for variance in the intercept due to site differences. But it does not really hurt to keep the effect of site in the model.
+
+Test for the random intercept of day:
+```{r}
+anova(m_beetle_t_s, m_beetle_t_s_d)
+
+```
+Strong evidence for variance in the intercept due to day differences.
+
+### Visualise results
+
+Let's try to visualise this model:
+```{r}
+emm_m_beetle_t_s_d <- as_tibble(emmeans(object = m_beetle_t_s_d, specs = ~ temperature,
+        at= list(temperature=seq(min(beetles$temperature), max(beetles$temperature), length.out = 100)), 
+        type="response"))
 ```
 
 ```{r}
-m_beetle_tXd <- glmmTMB(data = beetles,
-                      formula = presence ~ 1 + temperature * as.factor(day), family = "binomial")
-summary(m_beetle_tXd)
+ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE) +
+  geom_line(data = emm_m_beetle_t_s_d, mapping = aes(y=prob), col="red") + 
+  geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
+              inherit.aes = FALSE, 
+              fill="red", alpha=0.1)
 ```
 
-We cannot easily fit that model because on some days we have observed only presence or only absence. There is no variation in the response to let us estimate the 
+
+But what is it we are seeing? This is a prediction for a typical day; that is, when the random effect of day has an effect of zero.
+
+Emmeans does not give fine control over what we are doing. Predict may be better here.
+
+Let's consider predictions for two different days; day 19 where we did not detect the beetle at all, and day 10 where we detected the beetle at all sites.
 
 ```{r}
-m_beetle_tXd_short <- glmmTMB(data = beetles[! beetles$day %in% c(10, 11, 13, 16, 19),],
-                      formula = presence ~ 1 + temperature * as.factor(day), family = "binomial")
-summary(m_beetle_tXd)
+newdata_day19 <- tibble(temperature = seq(min(beetles$temperature), max(beetles$temperature), length.out = 100), 
+                  day=19, site="A")
+
+newdata_day10 <- tibble(temperature = seq(min(beetles$temperature), max(beetles$temperature), length.out = 100), 
+                  day=10, site="A")
+
 ```
+
+We can set the random effects to zero, to obtain predictions for a median day:
+```{r}
+predict(m_beetle_t_s_d, re.form = ~ 0, newdata = newdata_day19, type = "response")
+predict(m_beetle_t_s_d, re.form = ~ 0, newdata = newdata_day10, type = "response")
+```
+
+Or we can look at how predictions differ on different days:
+```{r}
+predict(m_beetle_t_s_d, re.form = NULL, newdata = newdata_day19, type = "response")
+predict(m_beetle_t_s_d, re.form = NULL, newdata = newdata_day10, type = "response")
+```
+
+
+
+Let's generalize that and make predictions for a few different days at the same time:
+```{r}
+newdata_days1_10_19 <- expand_grid(temperature = seq(min(beetles$temperature), max(beetles$temperature), length.out = 100), 
+                  day=c(1, 10, 19), site="A")
+newdata_days1_10_19$prob <- predict(m_beetle_t_s_d, re.form = NULL, 
+                                    newdata = newdata_days1_10_19, type = "response")
+
+```
+
+```{r}
+ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE) +
+  geom_line(data = emm_m_beetle_t_s_d, mapping = aes(y=prob), col="red") + 
+  geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
+              inherit.aes = FALSE, 
+              fill="red", alpha=0.1) + 
+  geom_line(newdata_days1_10_19, mapping = aes(temperature, y=prob, col=as.factor(day)))
+```
+
+
+If we want confidence intervals on those lines we need to calculate confidence intervals on the link scale and then apply the back-transformation:
+
+
+```{r}
+newdata_days1_10_19 <- expand_grid(temperature = seq(min(beetles$temperature), max(beetles$temperature), length.out = 100), 
+                  day=c(1, 10, 19), site="A")
+
+newdata_days1_10_19 <- bind_cols(newdata_days1_10_19, as_tibble(predict(m_beetle_t_s_d, re.form = NULL, 
+                                    newdata = newdata_days1_10_19, type = "link", se.fit = TRUE) ) )
+
+newdata_days1_10_19 <- newdata_days1_10_19 %>% mutate(prob = plogis(fit), lowCI = plogis(fit - 1.96*se.fit ), upCI = plogis(fit+1.96*se.fit))
+```
+
+```{r}
+ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE) +
+  geom_line(data = emm_m_beetle_t_s_d, mapping = aes(y=prob)) + 
+  geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
+              inherit.aes = FALSE, 
+              alpha=0.1) + 
+  geom_line(newdata_days1_10_19, mapping = aes(x=temperature, y=prob, col=as.factor(day))) +
+  geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1)
+```
+
+In black we see the median day prediction (no random effect), in color, predictions for 3 different days.
+
+We can see quite contrasted predictions for different days. On day 10 and 19 the model makes quite uncertain predictions; that is expected, because we observed only 1s, or 0s, respectively. However, the random effect extracted enough information from other days to predict that the probability of presence should not be exactly 1 at low temperature in day 10, and not exactly 0 at high temperatures in day 19.
+
+
+One last thing we may want to see, is the average response, across all days.
+
+```{r}
+newdata_alldays <- expand_grid(temperature = seq(min(beetles$temperature), max(beetles$temperature), length.out = 100), 
+                  day= unique(beetles$day), site="A")
+
+newdata_alldays <- bind_cols(newdata_alldays, as_tibble(predict(m_beetle_t_s_d, re.form = NULL, 
+                                newdata = newdata_alldays, type = "link", se.fit = TRUE)))
+
+```
+
+```{r}
+meanpred <- newdata_alldays %>% group_by(temperature) %>%
+  summarise(mean_prob = mean(plogis(fit)), 
+            lowCI = mean(plogis(fit-1.96*se.fit)), upCI = mean(plogis(fit + 1.96*se.fit)))
+```
+
+```{r}
+ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE) +
+  geom_line(data = emm_m_beetle_t_s_d, mapping = aes(y=prob)) + 
+  geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
+              inherit.aes = FALSE, 
+              alpha=0.1) + 
+  geom_line(newdata_days1_10_19, mapping = aes(x=temperature, y=prob, col=as.factor(day))) +
+  geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1) + 
+  geom_line(meanpred, mapping = aes(x=temperature, y=mean_prob), col = "goldenrod") +
+    geom_ribbon(meanpred, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI), inherit.aes = FALSE, fill="goldenrod", alpha=0.3) 
+```
+
+In addition to the previous lines, we can see in golden the prediction for the average presence across all days.
+
+Finally, we could add a prediction line from a naive model that did not include random effects:
+
+```{r}
+ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE) +
+  geom_line(data = emm_m_beetle_t_s_d, mapping = aes(y=prob)) + 
+  geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
+              inherit.aes = FALSE, 
+              alpha=0.1) + 
+  geom_line(newdata_days1_10_19, mapping = aes(x=temperature, y=prob, col=as.factor(day))) +
+  geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1) + 
+    geom_line(meanpred, mapping = aes(x=temperature, y=mean_prob), col = "goldenrod", size=3) +
+    geom_ribbon(meanpred, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI), inherit.aes = FALSE, fill="goldenrod", alpha=0.3) +
+  geom_smooth(method="glm", method.args=list(family="binomial"))
+```
+
+Here, the naive prediction is quite similar to the mean prediction from the mixed effect model, because the dataset is quite well balanced, but the confidence interval is very different. The difference could be more dramatic in a non-balanced dataset.
+
+### Mean, median, random levels... Jensen's inequality
+
+OK, now you should start to see why GLMMs can be confusing and complicated. The difference between these lines can seem quite subtle, but they have different meanings, and in some cases will tell very different stories. 
+
+In a linear mixed model there is no difference between median prediction and mean prediction because linear models assume effects are additive. 
+
+In GLMs effects are additive only on the scale of the "link scale", but not on the scale of the data.
+
+The distortion due to the change in scale can be simulated. First, let's draw random numbers following a normal distribution of mean 1.
+
+```{r}
+x1 <- rnorm(n = 10000, mean = 2, sd = 2)
+```
+
+What is their mean?
+```{r}
+mean(x1)
+```
+(basically 2)
+
+Now, let's apply a plogis() transform to these numbers; as if we were back-transforming predictions from a binary GLM:
+
+```{r}
+px1 <- plogis(x1)
+```
+You could expect the mean of px1, to be ```plogis(2)``` or ```plogis(mean(x1))```, but...
+
+```{r}
+plogis(mean(x1))
+mean(px1)
+```
+
+Even more dramatic, we can apply an exp() transform, as if we were back-transforming predictions from a Poisson GLM:
+
+```{r}
+lx1 <- exp(x1)
+mean(lx1)
+
+exp(mean(x1))
+```
+
+The difference between the mean of the transformed values and the transformed value of the mean is called "Jensen's inequality"; and is the basic reason why you need to be careful when making predictions with a GLMM. Imagine you have a GLMM with a random effect of year; What are you trying to do? 
+
+* If you want to calculate something about a typical year, exclude random effects from the calculation (that is what emmeans does)
+* If you want to calculate something about specific years, add specific year levels in your calculations
+* If you want to calculate something on average over all years, you need to integrate (= average) the calculation over years.
+
+
+### Random slope
+
+We have answered the first part of our question: temperature increases the probability of beetle detection. But is temperature a reliable indicator? Do different days, or different sites have different responses to temperatures?
+
+We already saw that fitting a fixed effect interaction between temperature and day did not work here; the model did not converge.
+What we need to do, is to fit random effects for the slope of temperature.
+
+You know the ```1 + ``` we write at the beginnin of formula? It stands of "intercept", and that is why we write random intercept models as ``` (1 | group)```. So, if we want a varying effect of temperature in addition to the random effect on the intercept, we can write ```(1 + temperature | group)```:
 
 Instead, we can use a random slope model:
 ```{r}
-m_beetle_tXd <- glmmTMB(data = beetles,
-                      formula = presence ~ 1 + temperature + (1 + temperature | day) + (1|site), 
-                      family = "binomial")
-summary(m_beetle_tXd)
+m_beetle_tXd_s <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature + (1 + temperature | day) +
+                        (1|site), family = "binomial")
+summary(m_beetle_tXd_s)
 
-Anova(m_beetle_tXd)
+Anova(m_beetle_tXd_s)
 ```
 
 The Anova() returns only a test for the fixed effect of temperature. How do we test whether the effect of temperature varied among days? 
 We can compare a model with the varying slope to a model without it, using the function anova() (lower case!).
 
 ```{r}
-m_beetle_t_d <- glmmTMB(data = beetles,
+m_beetle_t_d_s <- glmmTMB(data = beetles,
                       formula = presence ~ 1 + temperature + (1 | day) + (1|site), 
                       family = "binomial")
-summary(m_beetle_t_d)
-anova(m_beetle_t_d, m_beetle_tXd)
+
+anova(m_beetle_t_d_s, m_beetle_tXd_s)
 ```
+
+So, there is not strong evidence for a varying effect of temperature among days.
+
+What about variation in the effect of temperature among sites?
+```{r}
+m_beetle_tXs_d <- glmmTMB(data = beetles,
+                      formula = presence ~ 1 + temperature + (1 | day) +
+                        (1+ temperature |site), family = "binomial")
+summary(m_beetle_tXs_d)
+```
+The model has difficulties converging so we cannot compare it safely to another model. However, the reason why the model is not converging is our anwser: the variance parameters are effectively 0, so there is no evidence for a varying effect of temperature among sites.
+
+
+Oh, and by the way, we should check the fit of our models. I have been ignoring that aspect a little bit to focus on other content; but in real work we should do it:
 
 ```{r}
-testResiduals(m_beetle_tXd)
-testResiduals(m_beetle_t_d)
+testResiduals(m_beetle_tXd_s)
 ```
 
-
+Again, some evidence of outliers, but nothing looks too scary.
 
 
 
@@ -246,5 +515,5 @@ summary(model_poisson_re)
 testResiduals(model_poisson_re)
 ```
 
-This model says something like "each observation originated from the effect of the predictor, plus some unexplained noise, and that noise is additive on the log-scale, which means, effects are multiplicative on the data scale". It does not always work, but it is often a reasonable model for biological data.
+This model says something like "each observation originated from the effect of the predictor, plus some unexplained noise, and that noise is additive on the log-scale, which means, unknown effects are multiplicative on the data scale". It does not always work, but it is often a reasonable model for biological data.
 
