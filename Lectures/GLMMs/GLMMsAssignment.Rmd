@@ -27,76 +27,11 @@ library(DHARMa)
 ```
 
 
-## 
-
-
-## Pollinators
-
-```{r}
-polli <- read_csv("Working.dataset.csv")
-
-polli <- polli %>% filter(order!="NA") %>%
-  filter(mes %in% 6)
-  filter(sitio %in% c("Arenales.Guadalentin", "Arroyo.Ubios", "Barranco.La.Canal", "Calarilla", 
-                      " Los.Toreros", "Roblehondo", "Vadillo", "Valdecuevas"))
-
-pollicomp <- polli %>% complete(sitio, mes, ano, nesting(genus, order), fill = list(censo.num=0, visitas=0)) %>% filter(order!="NA")
-
-
-ggplot(pollicomp, aes(x=visitas)) + geom_histogram() + facet_wrap(~order) 
-
-
-ggplot(pollicomp, aes(x=ano, y=visitas, col=order))+ geom_point() +
-  geom_smooth(method = "lm")
-
-m0 <- glmmTMB(visitas ~ 1  + ano + (1 + ano|order), data = pollicomp,
-              family = nbinom1)
-summary(m0)
-```
-
-1. 
-
-
 ### Snow voles again!
 
-```{r}
-voles <- read_csv("voles.csv")
+After studying viability selection on mass (that is, the effect of mass on survival probability) in the snow vole population, we now want to study selection on mass via annual reproductive success (the effect of mass on the annual number of babies). In our previous analyses of survival, we could not tell whether selection had been varying. This time we want to test explicitly whether selection has been varying. 
 
-m0 <- glmmTMB(survival ~ 1 + sex*age + mass, family = binomial, data = voles)
-
-summary(m0)
-
-
-m1 <- glmmTMB(survival ~ 1 + sex*age + mass + (1|year), family = binomial(), data = voles)
-summary(m1)
-
-
-m2 <- glmmTMB(survival ~ 1 + sex*age + mass + (1 + mass|year), family = binomial, data = voles)
-summary(m2)
-```
-
-```{r}
-m0 <- glmmTMB(reproduction ~ 1 + sex*age + mass, family = poisson, data = voles)
-summary(m0)
-
-
-m1 <- glmmTMB(reproduction ~ 1 + sex*age + mass + (1|year), family = poisson(), data = voles)
-summary(m1)
-
-
-m2 <- glmmTMB(reproduction ~ 1 + sex*age + mass + (1 + mass|year), family = poisson, data = voles)
-summary(m2)
-
-emmeans(m2, specs = ~ 1, at(mass =))
-
-ggplot(voles, aes(x=mass, y=reproduction, color=interaction(sex,age))) + geom_point() + 
-   geom_smooth(method = "glm", method.args=list(family="poisson"))
-
-ggplot(voles, aes(x=mass, y=reproduction, color=interaction(sex,age))) + geom_point() + 
-   geom_smooth(method = "glm", method.args=list(family="poisson")) + facet_wrap(~ year)
-```
-
-1. Load the dataset ```voles.csv```. Visualise the variable reproduction as a function of mass, while accounting for sex and age. Start by looking at all years together. Then use ```facet_wrap()``` to visualise years separately. (**1pt**)
+1. Load the dataset ```voles.csv```. Visualise the variable ```reproduction``` as a function of ```mass```, while accounting for ```sex``` and ```age```. Use ```geom_smooth()``` with the appropriate method. Start by looking at all years together. Then use ```facet_wrap()``` to visualise years separately. Does it look like selection varies among years? (**1pt**)
 
 ```{r}
 voles <- read_csv("voles.csv")
@@ -107,7 +42,7 @@ ggplot(voles, aes(x=mass, y=reproduction, color=interaction(sex,age))) + geom_po
    geom_smooth(method = "glm", method.args=list(family="poisson")) + facet_wrap(~ year)
 ```
 
-2. Why should we probably remove juveniles (```age=="J"```) from those data when we fit a model of reproduction? Filter out juveniles from the data set. (**1pt**)
+2. Why should we probably remove juveniles (```age=="J"```) from those data when we fit a model of reproduction? Filter out juveniles from the data set. (**1pt**) ( _**0.5pt bonus**: Can you think of any other data we should probably discard from this dataset?_ )
 
 ```{r}
 voles <- voles %>% filter(age =="A")
@@ -116,16 +51,42 @@ ggplot(voles, aes(x=mass, y=reproduction, color=sex)) + geom_point() +
 ```
 
 
-3. Fit a GLM for reproduction as a function of sex and mass. Select an appropriate family based on your intuition and simulated residuals (for this time don't worry about the Outlier test, pay attention only to the KS test and the Dispersion test) or simulated data. (0.5pt)
+3. Fit a GLM for reproduction as a function of sex and mass. Select an appropriate GLM type based on your intuition and simulated residuals (for this time don't worry about the Outlier test, pay attention only to the KS test and the Dispersion test) and/or simulate data. (**1pt**)
 
 ```{r}
 m0 <- glmmTMB(reproduction ~ 1 + sex + mass, family = nbinom1(), data = voles)
 summary(m0)
 testResiduals(m0)
 
+fsimulF <- function(x) {
+  tibble(simul= simulate(m0)[voles$sex=="Female",1]) %>% filter(!is.na(simul)) %>%
+  tabyl(simul)
+  }
+tibbsimulF <- map_dfr(.x = 1:100, .f = fsimulF) %>% mutate(sex="Female")
+
+fsimulM <- function(x) {
+  tibble(simul= simulate(m0)[voles$sex=="Male",1]) %>% filter(!is.na(simul)) %>%
+  tabyl(simul)
+  }
+tibbsimulM <- map_dfr(.x = 1:100, .f = fsimulM) %>% mutate(sex="Male")
+
+tibbsimul <- rbind(tibbsimulF, tibbsimulM)
+
+ggplot(voles, aes(x=reproduction))+geom_bar() + facet_wrap(~sex)+
+  geom_jitter(data = tibbsimul, width = 0.1,height = 0,
+             mapping = aes(x=simul, y=n, col=as.factor(simul)),
+             alpha=0.4, inherit.aes = FALSE) + xlim(-1,30)+ ggtitle("Nbinom1 GLM")
+
+#alternatively
+voles$obsid <- 1:nrow(voles)
+m0 <- glmmTMB(reproduction ~ 1 + sex + mass + (1|obsid), family = poisson(), data = voles)
+m1 <- glmmTMB(reproduction ~ 1 + sex + mass + (1|obsid) + (1|year), family = poisson(), data = voles)
+m2 <- glmmTMB(reproduction ~ 1 + sex + mass + (1|obsid) + (1+mass|year), family = poisson(), data = voles)
+summary(m2)
+anova(m0, m1, m2)
 ```
 
-4. Turn your model into a GLMM by adding a random intercept of year. Then fit a third model, with a random intercept and a random mass effect of year. Compare the three models using the function anova(). Is there support for differences in reproductive success baselines among years? Is there support for variation in the effect of mass among years?
+4. Turn your model into a GLMM by adding a random intercept of year. Then fit a third model, with a random intercept and a random mass effect of year. Compare the three models using the function ```anova()```. Is there support for differences in reproductive success baselines among years? Is there support for variation in the effect of mass among years?(**1pt**)
 
 _NB: do not worry if one of your model returns a warning message, as long as there are parameter estimates and values for standard error and p-value in the summary. Such warnings are likely to happen if a variance component is very small, or if a correlation between random intercept and random slope is close to 1 or -1._
 
@@ -145,4 +106,81 @@ anova(m0, m1, m2)
 ```
 
 
+5. Use ```predict()``` with the last model (with a random intercept and a random slope for mass among years) to generate model predictions for reproductive success as a function of mass and sex for each year. Visualise those predictions (if possible with confidence intervals). (**1pt**) To avoid showing too many lines at once, you could use a ```facet_wrap``` of year, or of sex. ( _0.5pt bonus if you do both_ )
+
+```{r}
+newdata_voles <- expand_grid(mass = seq(min(voles$mass, na.rm = TRUE),
+                                        max(voles$mass, na.rm = TRUE), length.out = 100), 
+                  sex=c("Male", "Female"), year=seq(min(voles$year), max(voles$year)))
+
+newdata_voles <- bind_cols(newdata_voles, as_tibble(predict(m2, re.form = NULL, 
+                                    newdata = newdata_voles, type = "link", 
+                              se.fit = TRUE)) )
+
+newdata_voles <- newdata_voles %>% mutate(rate = exp(fit), lowCI = exp(fit - 1.96*se.fit ), upCI = exp(fit+1.96*se.fit))
+
+newdata_voles$RE <- TRUE
+voles$RE <- FALSE
+
+ggplot(voles, aes(x=mass, y=reproduction, col=interaction(RE, sex))) + 
+  geom_point(alpha=0.3)+
+  geom_line(data = newdata_voles, mapping = aes(x=mass,y=rate, col=interaction(RE, sex)), inherit.aes = FALSE) + 
+  geom_ribbon(data = newdata_voles, mapping = aes(x=mass, ymin = lowCI, ymax= upCI,
+                                                  fill=interaction(RE, sex)),
+              inherit.aes = FALSE, 
+              alpha=0.1) + facet_wrap(~year) +
+  geom_smooth(method = "glm", method.args=list(family="poisson"), linetype = 3, alpha=0.1)
+
+# second option
+ggplot(voles, aes(x=mass, y=reproduction, col=as.factor(year))) + facet_wrap(~sex) +
+  geom_point(alpha=0.3)+
+  geom_line(data = newdata_voles, mapping = aes(x=mass,y=rate, col=as.factor(year)),
+            inherit.aes = FALSE) + 
+  geom_ribbon(data = newdata_voles, mapping = aes(x=mass, ymin = lowCI, ymax= upCI,
+                                                  fill=as.factor(year)),
+              inherit.aes = FALSE, 
+              alpha=0.1) 
+  
+```
+
+6. How do model predictions compare to the fit produced by ```geom_smooth()``` in question 1? Discuss the pros and cons of your final model. For instance: Do you think it is better to fit one model for each year separately or all at once? How well is the effect of sex captured? What could we do (at least, in principle) to improve our final model? (**1pt**)
+
+
+7. Make a graph for the predicted reproductive success as a function of mass and sex, on an average year (**0.5pt**). On the same graph, add the predicted reproductive success as a function of mass and sex, on a "typical year" (that is, when the random effect of year for the intercept and for mass is zero). (**0.5pt**) 
+Which one shows a stronger effect? Why is that the case (mathematically)? Which one do you think is more interesting? ( _1pt bonus_)
+
+```{r}
+
+newdata_volesMedian <- expand_grid(mass = seq(min(voles$mass, na.rm = TRUE),
+                                        max(voles$mass, na.rm = TRUE), length.out = 100), 
+                  sex=c("Male", "Female"), year=seq(min(voles$year), max(voles$year)))
+
+newdata_volesMedian <- bind_cols(newdata_volesMedian, as_tibble(predict(m2, re.form =~ 0, 
+                                    newdata = newdata_volesMedian, type = "link", 
+                              se.fit = TRUE)) )
+newdata_volesMedian <- newdata_volesMedian %>% mutate(rate = exp(fit),
+                                                      lowCI = exp(fit - 1.96*se.fit ), upCI = exp(fit+1.96*se.fit))
+
+
+meanpred <- newdata_voles %>% group_by(mass, sex) %>%
+  summarise(mean_rate = mean(exp(fit)), 
+            lowCI = mean(exp(fit-1.96*se.fit)), upCI = mean(exp(fit + 1.96*se.fit)))
+
+ggplot(voles, aes(x=mass, y=reproduction, col=as.factor(year))) + facet_wrap(~sex) +
+  geom_point(alpha=0.3)+
+  geom_line(data = meanpred, mapping = aes(x=mass,y=mean_rate),
+            inherit.aes = FALSE) + 
+  geom_ribbon(data = meanpred, mapping = aes(x=mass, ymin = lowCI, ymax= upCI),
+              inherit.aes = FALSE, 
+              alpha=0.1) + ggtitle("average year")+
+  geom_line(data = newdata_volesMedian, mapping = aes(x=mass,y=rate),
+            inherit.aes = FALSE, col="red") + 
+  geom_ribbon(data = newdata_volesMedian,
+              mapping = aes(x=mass, ymin = lowCI, ymax= upCI),
+              inherit.aes = FALSE, 
+              alpha=0.1, fill="red") 
+
+
+
+```
 

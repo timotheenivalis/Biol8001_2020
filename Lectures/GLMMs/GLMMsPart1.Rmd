@@ -2,11 +2,18 @@
 title: "GLMMs"
 author: "Timothee Bonnet"
 date: "2 October 2020"
-output: html_document
+output: 
+  html_document:
+    theme: united
+    highlight: pygments
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
 ---
 
 Packages for today:
-```{r}
+```{r, message=FALSE}
 library(tidyverse)
 library(ggbeeswarm)
 library(janitor)
@@ -14,17 +21,22 @@ library(glmmTMB)
 library(car)
 library(emmeans)
 library(DHARMa)
+library(DiagrammeR)#this one is not necessary
 ```
 
 
 Goals for today:
 
-* Understanding when to use Generalized Linear Mixed Models
+* Understand when to use Generalized Linear Mixed Models
 * Know how to fit Generalized Linear Mixed Models in glmmTMB, including random intercepts and random slopes
 * Interpret and predict from GLMMs
-* Understand Jensen's inequality and the need to integrate for model predictions
+* Understand different types of model predictions and Jensen's inequality
 
-A Generalized Linear Mixed Model (GLMM) is a GLM with random effects. 
+
+A Generalized Linear Mixed Model (GLMM) is a GLM with random effects. We have seen we need GLMs to model response variables corresponding to presence/absence or to count data. We have seen that we use random effects to account for structure (such as spatial or time structure) in the unexplained variation of a response variable. 
+Now we put together GLM and random effects in the same model.
+
+You should already be familiar with most features of GLMs and random effects. Today we will mostly insist on special, counter-intuitive, aspects of GLMMs.
 
 ### Binary GLMM, varying effect
 
@@ -73,6 +85,8 @@ The presence of a rare bettle has been monitored across 18 locations where it is
 We can visualise the effect of temperatures overall:
 ```{r}
 beetles <- read_csv("bettle_detection.csv")
+str(beetles)
+beetles %>% mutate(site_fct=factor(site)) %>%summary()
 
 ggplot(beetles, aes(x=temperature, y = presence, color=site))  + geom_beeswarm(groupOnX = FALSE)
 ```
@@ -111,6 +125,31 @@ m_beetle_t <- glmmTMB(data = beetles, formula = presence ~ 1 + temperature, fami
 summary(m_beetle_t)
 Anova(m_beetle_t, type=3)
 ```
+
+
+
+
+```{r, echo=FALSE, eval=TRUE}
+library(DiagrammeR)
+grViz("
+digraph boxes_and_circles {
+node [shape = square, color = red]
+presence; temp
+
+node [shape = circle, color = black]
+p; y
+
+node [shape = diamond, color=green]
+intercept; 
+
+y -> p [label = '  plogis']; 
+p -> presence [label = '  Bernoulli', style=dashed];
+intercept ->y; temp -> slope -> y ;
+}")
+
+```
+
+
 
 Model diagnostics are about right:
 ```{r}
@@ -163,6 +202,32 @@ summary(m_beetle_t_s_d)
 
 That is much cleaner looking, but also more efficient computationally.  
 
+```{r, echo=FALSE, eval=TRUE}
+library(DiagrammeR)
+grViz("
+digraph boxes_and_circles {
+node [shape = square, color = red]
+presence; temp
+
+node [shape = circle, color = black]
+p; y; baseline; noise
+
+node [shape = diamond, color=green]
+intercept; 
+
+y -> p [label = '  plogis']; 
+p -> presence [label = '  Bernoulli', style=dashed];
+intercept -> baseline ; noise -> baseline;
+baseline -> y;
+temp -> slope -> y ; 
+V_site -> noise [label = '  Gaussian', style=dashed];
+V_day -> noise [label = '  Gaussian', style=dashed];
+
+}")
+
+```
+
+
 One small annoyance: The ```Anova()``` function tests only fixed effects.
 ```{r}
 Anova(m_beetle_t_s_d, type = 3)
@@ -204,7 +269,7 @@ ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE
   geom_line(data = emm_m_beetle_t_s_d, mapping = aes(y=prob), col="red") + 
   geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
               inherit.aes = FALSE, 
-              fill="red", alpha=0.1)
+              fill="red", alpha=0.1) + facet_wrap(~day)
 ```
 
 
@@ -237,10 +302,10 @@ predict(m_beetle_t_s_d, re.form = NULL, newdata = newdata_day10, type = "respons
 
 
 
-Let's generalize that and make predictions for a few different days at the same time:
+Let's generalize that and make predictions for each day at the same time:
 ```{r}
 newdata_days1_10_19 <- expand_grid(temperature = seq(min(beetles$temperature), max(beetles$temperature), length.out = 100), 
-                  day=c(1, 10, 19), site="A")
+                  day=1:22, site="A")
 newdata_days1_10_19$prob <- predict(m_beetle_t_s_d, re.form = NULL, 
                                     newdata = newdata_days1_10_19, type = "response")
 
@@ -252,7 +317,7 @@ ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE
   geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
               inherit.aes = FALSE, 
               fill="red", alpha=0.1) + 
-  geom_line(newdata_days1_10_19, mapping = aes(temperature, y=prob, col=as.factor(day)))
+  geom_line(newdata_days1_10_19, mapping = aes(temperature, y=prob, col=as.factor(day)))+facet_wrap(~day)
 ```
 
 
@@ -261,7 +326,7 @@ If we want confidence intervals on those lines we need to calculate confidence i
 
 ```{r}
 newdata_days1_10_19 <- expand_grid(temperature = seq(min(beetles$temperature), max(beetles$temperature), length.out = 100), 
-                  day=c(1, 10, 19), site="A")
+                  day=1:22, site="A")
 
 newdata_days1_10_19 <- bind_cols(newdata_days1_10_19, as_tibble(predict(m_beetle_t_s_d, re.form = NULL, 
                                     newdata = newdata_days1_10_19, type = "link", se.fit = TRUE) ) )
@@ -276,7 +341,7 @@ ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE
               inherit.aes = FALSE, 
               alpha=0.1) + 
   geom_line(newdata_days1_10_19, mapping = aes(x=temperature, y=prob, col=as.factor(day))) +
-  geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1)
+  geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1) + facet_wrap(~day)
 ```
 
 In black we see the median day prediction (no random effect), in color, predictions for 3 different days.
@@ -310,7 +375,7 @@ ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE
   geom_line(newdata_days1_10_19, mapping = aes(x=temperature, y=prob, col=as.factor(day))) +
   geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1) + 
   geom_line(meanpred, mapping = aes(x=temperature, y=mean_prob), col = "goldenrod") +
-    geom_ribbon(meanpred, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI), inherit.aes = FALSE, fill="goldenrod", alpha=0.3) 
+    geom_ribbon(meanpred, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI), inherit.aes = FALSE, fill="goldenrod", alpha=0.3) + facet_wrap(~day)
 ```
 
 In addition to the previous lines, we can see in golden the prediction for the average presence across all days.
@@ -323,8 +388,6 @@ ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE
   geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
               inherit.aes = FALSE, 
               alpha=0.1) + 
-  geom_line(newdata_days1_10_19, mapping = aes(x=temperature, y=prob, col=as.factor(day))) +
-  geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1) + 
     geom_line(meanpred, mapping = aes(x=temperature, y=mean_prob), col = "goldenrod", size=3) +
     geom_ribbon(meanpred, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI), inherit.aes = FALSE, fill="goldenrod", alpha=0.3) +
   geom_smooth(method="glm", method.args=list(family="binomial"))
@@ -332,7 +395,22 @@ ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE
 
 Here, the naive prediction is quite similar to the mean prediction from the mixed effect model, because the dataset is quite well balanced, but the confidence interval is very different. The difference could be more dramatic in a non-balanced dataset.
 
-### Mean, median, random levels... Jensen's inequality
+If we facet wrap by day, we get a model for each day. You will see that the model fitted on each days are much worse than the global model using all the information at once. In particular, on some days there is not enough information to fit a glm() when taken alone, but prediction of the model using all data appear reasonable.
+```{r}
+ggplot(beetles, aes(x=temperature, y=presence)) + geom_beeswarm(groupOnX = FALSE) +
+  geom_line(data = emm_m_beetle_t_s_d, mapping = aes(y=prob)) + 
+  geom_ribbon(data = emm_m_beetle_t_s_d, mapping = aes(x=temperature, ymin = lower.CL, ymax= upper.CL),
+              inherit.aes = FALSE, 
+              alpha=0.1) + 
+  geom_line(newdata_days1_10_19, mapping = aes(x=temperature, y=prob, col=as.factor(day))) +
+  geom_ribbon(newdata_days1_10_19, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI, fill=as.factor(day)), inherit.aes = FALSE, alpha=0.1) + 
+    geom_line(meanpred, mapping = aes(x=temperature, y=mean_prob), col = "goldenrod") +
+    geom_ribbon(meanpred, mapping = aes(x=temperature, ymin=lowCI, ymax=upCI), inherit.aes = FALSE, fill="goldenrod", alpha=0.3) +
+  geom_smooth(method="glm", method.args=list(family="binomial")) + facet_wrap(~day)
+```
+
+
+### Average day, or average across days... Jensen's inequality
 
 OK, now you should start to see why GLMMs can be confusing and complicated. The difference between these lines can seem quite subtle, but they have different meanings, and in some cases will tell very different stories. 
 
@@ -398,6 +476,36 @@ summary(m_beetle_tXd_s)
 
 Anova(m_beetle_tXd_s)
 ```
+
+```{r, echo=FALSE, eval=TRUE}
+library(DiagrammeR)
+grViz("
+digraph boxes_and_circles {
+node [shape = square, color = red]
+presence; temp
+
+node [shape = circle, color = black]
+p; y; noise1; noise2; slopes; baselines;
+
+node [shape = diamond, color=green]
+intercept; 
+
+y -> p [label = '  plogis']; 
+p -> presence [label = '  Bernoulli', style=dashed];
+intercept -> baselines ; 
+noise1 -> baselines;
+baselines -> y;
+slope -> slopes;
+noise2 -> slopes;
+temp -> slopes -> y ;
+V_site -> noise1 [label = '  Gaussian', style=dashed];
+V_day -> noise2 [label = '  Gaussian', style=dashed];
+V_day -> noise1 [label = '  Gaussian', style=dashed];
+
+}")
+
+```
+
 
 The Anova() returns only a test for the fixed effect of temperature. How do we test whether the effect of temperature varied among days? 
 We can compare a model with the varying slope to a model without it, using the function anova() (lower case!).
@@ -469,11 +577,12 @@ m0nb2 <- glmmTMB(obs ~ 1 + x, family = nbinom2())
 testResiduals(m0nb2)
 
 
-dat <- data.frame(reproductive_success = obs, gonopodium_size = 10+x, id = obsid)
+dat <- data.frame(id = obsid, reproductive_success = obs, gonopodium_size = 10+x,
+                  tank_id = sample(x = 1:14, size = nobs, replace = TRUE))
 write.csv(dat, file = "fishrepro.csv", row.names = FALSE)
 ```
 
-
+We study sexual selection in mosquito fish. We want to test whether the size of male gonopodium (it's a ventral fin they use in display and mating) predicts reproductive success. We have studied fish in 14 different tanks and we want to account for possible variation among tanks, so we will need a random effect for tank. The response variable, reproductive success is a count variable, so we will probably use a count data GLM. GLM + random effect = GLMM.
 
 ```{r}
 fish <- read_csv("fishrepro.csv")
@@ -489,19 +598,41 @@ The variable ```id``` is just row number. It does not seem particularly useful f
 
 
 ```{r}
-model_poisson <- glmmTMB(reproductive_success ~ 1 + gonopodium_size, data = fish, family = poisson)
+model_poisson <- glmmTMB(reproductive_success ~ 1 + gonopodium_size + (1|tank_id), data = fish, family = poisson)
 summary(model_poisson)
 testResiduals(model_poisson)
 ```
 
+```{r, echo=FALSE, eval=TRUE}
+library(DiagrammeR)
+grViz("
+digraph boxes_and_circles {
+node [shape = square, color = red]
+repro; size
+
+node [shape = circle, color = black]
+lambda; y; noise; baselines;
+
+node [shape = diamond, color=green]
+intercept; 
+
+y -> lambda [label = '  exp']; 
+lambda -> repro [label = '  Poisson', style=dashed];
+intercept -> baselines;
+baselines ->y; size -> slope -> y ; noise -> baselines;
+V_tank -> noise [label = '  Gaussian', style=dashed];
+}")
+
+```
+
 ```{r}
-model_nbinom1 <- glmmTMB(reproductive_success ~ 1 + gonopodium_size, data = fish, family = nbinom1())
+model_nbinom1 <- glmmTMB(reproductive_success ~ 1 + gonopodium_size+ (1|tank_id), data = fish, family = nbinom1())
 summary(model_nbinom1)
 testResiduals(model_nbinom1)
 ```
 
 ```{r}
-model_nbinom2 <- glmmTMB(reproductive_success ~ 1 + gonopodium_size, data = fish, family = nbinom2())
+model_nbinom2 <- glmmTMB(reproductive_success ~ 1 + gonopodium_size+ (1|tank_id), data = fish, family = nbinom2())
 summary(model_nbinom2)
 testResiduals(model_nbinom2)
 ```
@@ -510,9 +641,33 @@ testResiduals(model_nbinom2)
 **Instead of using a different family, we can try to model over-dispersion with an observation-level random effect:**
 
 ```{r}
-model_poisson_re <- glmmTMB(reproductive_success ~ 1 + gonopodium_size + (1|id), data = fish, family = poisson)
+model_poisson_re <- glmmTMB(reproductive_success ~ 1 + gonopodium_size + (1|id)+ (1|tank_id), data = fish, family = poisson)
 summary(model_poisson_re)
 testResiduals(model_poisson_re)
+```
+
+
+```{r, echo=FALSE, eval=TRUE}
+library(DiagrammeR)
+grViz("
+digraph boxes_and_circles {
+node [shape = square, color = red]
+repro; size
+
+node [shape = circle, color = black]
+lambda; y; noise; baselines;
+
+node [shape = diamond, color=green]
+intercept; 
+
+y -> lambda [label = '  exp']; 
+lambda -> repro [label = '  Poisson', style=dashed];
+intercept -> baselines;
+baselines ->y; size -> slope -> y ; noise -> baselines;
+V_tank -> noise [label = '  Gaussian', style=dashed];
+V_id -> noise [label = '  Gaussian', style=dashed];
+}")
+
 ```
 
 This model says something like "each observation originated from the effect of the predictor, plus some unexplained noise, and that noise is additive on the log-scale, which means, unknown effects are multiplicative on the data scale". It does not always work, but it is often a reasonable model for biological data.
