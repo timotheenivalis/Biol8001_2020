@@ -84,7 +84,7 @@ The presence of a rare bettle has been monitored across 18 locations where it is
 
 We can visualise the effect of temperatures overall:
 ```{r}
-beetles <- read_csv("bettle_detection.csv")
+beetles <- read_csv("beetle_detection.csv")
 str(beetles)
 beetles %>% mutate(site_fct=factor(site)) %>%summary()
 
