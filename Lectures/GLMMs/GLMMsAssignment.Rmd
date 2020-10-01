@@ -1,0 +1,148 @@
+---
+title: "GLMMs"
+author: "Timothee Bonnet"
+date: "2 October 2020"
+output: 
+  html_document:
+    theme: united
+    highlight: pygments
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, results = "hide", fig.show='hide')
+```
+
+```{r, message=FALSE}
+library(tidyverse)
+library(ggbeeswarm)
+library(janitor)
+library(glmmTMB)
+library(car)
+library(emmeans)
+library(DHARMa)
+```
+
+
+## 
+
+
+## Pollinators
+
+```{r}
+polli <- read_csv("Working.dataset.csv")
+
+polli <- polli %>% filter(order!="NA") %>%
+  filter(mes %in% 6)
+  filter(sitio %in% c("Arenales.Guadalentin", "Arroyo.Ubios", "Barranco.La.Canal", "Calarilla", 
+                      " Los.Toreros", "Roblehondo", "Vadillo", "Valdecuevas"))
+
+pollicomp <- polli %>% complete(sitio, mes, ano, nesting(genus, order), fill = list(censo.num=0, visitas=0)) %>% filter(order!="NA")
+
+
+ggplot(pollicomp, aes(x=visitas)) + geom_histogram() + facet_wrap(~order) 
+
+
+ggplot(pollicomp, aes(x=ano, y=visitas, col=order))+ geom_point() +
+  geom_smooth(method = "lm")
+
+m0 <- glmmTMB(visitas ~ 1  + ano + (1 + ano|order), data = pollicomp,
+              family = nbinom1)
+summary(m0)
+```
+
+1. 
+
+
+### Snow voles again!
+
+```{r}
+voles <- read_csv("voles.csv")
+
+m0 <- glmmTMB(survival ~ 1 + sex*age + mass, family = binomial, data = voles)
+
+summary(m0)
+
+
+m1 <- glmmTMB(survival ~ 1 + sex*age + mass + (1|year), family = binomial(), data = voles)
+summary(m1)
+
+
+m2 <- glmmTMB(survival ~ 1 + sex*age + mass + (1 + mass|year), family = binomial, data = voles)
+summary(m2)
+```
+
+```{r}
+m0 <- glmmTMB(reproduction ~ 1 + sex*age + mass, family = poisson, data = voles)
+summary(m0)
+
+
+m1 <- glmmTMB(reproduction ~ 1 + sex*age + mass + (1|year), family = poisson(), data = voles)
+summary(m1)
+
+
+m2 <- glmmTMB(reproduction ~ 1 + sex*age + mass + (1 + mass|year), family = poisson, data = voles)
+summary(m2)
+
+emmeans(m2, specs = ~ 1, at(mass =))
+
+ggplot(voles, aes(x=mass, y=reproduction, color=interaction(sex,age))) + geom_point() + 
+   geom_smooth(method = "glm", method.args=list(family="poisson"))
+
+ggplot(voles, aes(x=mass, y=reproduction, color=interaction(sex,age))) + geom_point() + 
+   geom_smooth(method = "glm", method.args=list(family="poisson")) + facet_wrap(~ year)
+```
+
+1. Load the dataset ```voles.csv```. Visualise the variable reproduction as a function of mass, while accounting for sex and age. Start by looking at all years together. Then use ```facet_wrap()``` to visualise years separately. (**1pt**)
+
+```{r}
+voles <- read_csv("voles.csv")
+
+ggplot(voles, aes(x=mass, y=reproduction, color=interaction(sex,age))) + geom_point() + 
+   geom_smooth(method = "glm", method.args=list(family="poisson"))
+ggplot(voles, aes(x=mass, y=reproduction, color=interaction(sex,age))) + geom_point() + 
+   geom_smooth(method = "glm", method.args=list(family="poisson")) + facet_wrap(~ year)
+```
+
+2. Why should we probably remove juveniles (```age=="J"```) from those data when we fit a model of reproduction? Filter out juveniles from the data set. (**1pt**)
+
+```{r}
+voles <- voles %>% filter(age =="A")
+ggplot(voles, aes(x=mass, y=reproduction, color=sex)) + geom_point() + 
+   geom_smooth(method = "glm", method.args=list(family="poisson")) + facet_wrap(~ year)
+```
+
+
+3. Fit a GLM for reproduction as a function of sex and mass. Select an appropriate family based on your intuition and simulated residuals (for this time don't worry about the Outlier test, pay attention only to the KS test and the Dispersion test) or simulated data. (0.5pt)
+
+```{r}
+m0 <- glmmTMB(reproduction ~ 1 + sex + mass, family = nbinom1(), data = voles)
+summary(m0)
+testResiduals(m0)
+
+```
+
+4. Turn your model into a GLMM by adding a random intercept of year. Then fit a third model, with a random intercept and a random mass effect of year. Compare the three models using the function anova(). Is there support for differences in reproductive success baselines among years? Is there support for variation in the effect of mass among years?
+
+_NB: do not worry if one of your model returns a warning message, as long as there are parameter estimates and values for standard error and p-value in the summary. Such warnings are likely to happen if a variance component is very small, or if a correlation between random intercept and random slope is close to 1 or -1._
+
+```{r}
+
+m1 <- glmmTMB(reproduction ~ 1 + sex + mass + (1|year), family = nbinom1(), data = voles)
+summary(m1)
+testResiduals(m1)
+
+
+m2 <- glmmTMB(reproduction ~ 1 + sex + mass + (1 + mass|year), family = nbinom1(), data = voles)
+summary(m2)
+
+testResiduals(m2)
+
+anova(m0, m1, m2)
+```
+
+
+
