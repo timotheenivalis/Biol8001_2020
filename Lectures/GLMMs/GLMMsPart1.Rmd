@@ -129,7 +129,7 @@ Anova(m_beetle_t, type=3)
 
 
 
-```{r, echo=FALSE, eval=TRUE}
+```{r, echo=TRUE, eval=TRUE}
 library(DiagrammeR)
 grViz("
 digraph boxes_and_circles {
@@ -202,7 +202,7 @@ summary(m_beetle_t_s_d)
 
 That is much cleaner looking, but also more efficient computationally.  
 
-```{r, echo=FALSE, eval=TRUE}
+```{r, echo=TRUE, eval=TRUE}
 library(DiagrammeR)
 grViz("
 digraph boxes_and_circles {
@@ -477,7 +477,7 @@ summary(m_beetle_tXd_s)
 Anova(m_beetle_tXd_s)
 ```
 
-```{r, echo=FALSE, eval=TRUE}
+```{r, echo=TRUE, eval=TRUE}
 library(DiagrammeR)
 grViz("
 digraph boxes_and_circles {
@@ -603,7 +603,7 @@ summary(model_poisson)
 testResiduals(model_poisson)
 ```
 
-```{r, echo=FALSE, eval=TRUE}
+```{r, echo=TRUE, eval=TRUE}
 library(DiagrammeR)
 grViz("
 digraph boxes_and_circles {
@@ -647,7 +647,7 @@ testResiduals(model_poisson_re)
 ```
 
 
-```{r, echo=FALSE, eval=TRUE}
+```{r, echo=TRUE, eval=TRUE}
 library(DiagrammeR)
 grViz("
 digraph boxes_and_circles {
