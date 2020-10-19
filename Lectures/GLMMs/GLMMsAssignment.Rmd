@@ -50,6 +50,8 @@ ggplot(voles, aes(x=mass, y=reproduction, color=sex)) + geom_point() +
    geom_smooth(method = "glm", method.args=list(family="poisson")) + facet_wrap(~ year)
 ```
 
+**We could also discard NAs in `mass`. Some people also suggested discarding voles that are still alive since they may still be reproducing and have a down-biased reproduction value.**
+
 
 3. Fit a GLM for reproduction as a function of sex and mass. Select an appropriate GLM type based on your intuition and simulated residuals (for this time don't worry about the Outlier test, pay attention only to the KS test and the Dispersion test) and/or simulate data. (**1pt**)
 
@@ -77,6 +79,13 @@ ggplot(voles, aes(x=reproduction))+geom_bar() + facet_wrap(~sex)+
              mapping = aes(x=simul, y=n, col=as.factor(simul)),
              alpha=0.4, inherit.aes = FALSE) + xlim(-1,30)+ ggtitle("Nbinom1 GLM")
 
+
+m0 <- glmmTMB(reproduction ~ 1 + sex + mass , family = nbinom1(), data = voles)
+m1 <- glmmTMB(reproduction ~ 1 + sex + mass  + (1|year), family = nbinom1(), data = voles)
+m2 <- glmmTMB(reproduction ~ 1 + sex + mass  + (1+mass|year), family = nbinom1(), data = voles, control = glmmTMBControl(optCtrl=list(iter.max=1e4,eval.max=1e4)) )
+anova(m0, m1, m2)
+summary(m2)
+
 #alternatively
 voles$obsid <- 1:nrow(voles)
 m0 <- glmmTMB(reproduction ~ 1 + sex + mass + (1|obsid), family = poisson(), data = voles)
@@ -84,6 +93,8 @@ m1 <- glmmTMB(reproduction ~ 1 + sex + mass + (1|obsid) + (1|year), family = poi
 m2 <- glmmTMB(reproduction ~ 1 + sex + mass + (1|obsid) + (1+mass|year), family = poisson(), data = voles)
 summary(m2)
 anova(m0, m1, m2)
+
+anova(m1, m2)
 ```
 
 4. Turn your model into a GLMM by adding a random intercept of year. Then fit a third model, with a random intercept and a random mass effect of year. Compare the three models using the function ```anova()```. Is there support for differences in reproductive success baselines among years? Is there support for variation in the effect of mass among years?(**1pt**)
@@ -97,7 +108,8 @@ summary(m1)
 testResiduals(m1)
 
 
-m2 <- glmmTMB(reproduction ~ 1 + sex + mass + (1 + mass|year), family = nbinom1(), data = voles)
+
+m2 <- glmmTMB(reproduction ~ 1 + sex + mass + (1 + mass|year), family = nbinom1(), data = voles, control = glmmTMBControl(optCtrl=list(iter.max=1e4,eval.max=1e4)) )
 summary(m2)
 
 testResiduals(m2)
@@ -109,6 +121,8 @@ anova(m0, m1, m2)
 5. Use ```predict()``` with the last model (with a random intercept and a random slope for mass among years) to generate model predictions for reproductive success as a function of mass and sex for each year. Visualise those predictions (if possible with confidence intervals). (**1pt**) To avoid showing too many lines at once, you could use a ```facet_wrap``` of year, or of sex. ( _0.5pt bonus if you do both_ )
 
 ```{r}
+
+
 newdata_voles <- expand_grid(mass = seq(min(voles$mass, na.rm = TRUE),
                                         max(voles$mass, na.rm = TRUE), length.out = 100), 
                   sex=c("Male", "Female"), year=seq(min(voles$year), max(voles$year)))
@@ -131,6 +145,7 @@ ggplot(voles, aes(x=mass, y=reproduction, col=interaction(RE, sex))) +
               alpha=0.1) + facet_wrap(~year) +
   geom_smooth(method = "glm", method.args=list(family="poisson"), linetype = 3, alpha=0.1)
 
+
 # second option
 ggplot(voles, aes(x=mass, y=reproduction, col=as.factor(year))) + facet_wrap(~sex) +
   geom_point(alpha=0.3)+
@@ -145,6 +160,11 @@ ggplot(voles, aes(x=mass, y=reproduction, col=as.factor(year))) + facet_wrap(~se
 
 6. How do model predictions compare to the fit produced by ```geom_smooth()``` in question 1? Discuss the pros and cons of your final model. For instance: Do you think it is better to fit one model for each year separately or all at once? How well is the effect of sex captured? What could we do (at least, in principle) to improve our final model? (**1pt**)
 
+**The final model does not capture the interaction between sex and mass, not the variation in the effect of sex among years. Geom_smooth() captured variations related to sex better. However on some years, prediction lines have very broad confidence intervals, showing that there is not enough data to fit the models within each year.**
+
+**The advantages of fitting a single model across all years are: 1) you can test whether differences among years are significant (if you fit different models you cannot do that!); 2) each parameter is estimated from more data, so they are more precise and accurate and you have more statistical power to detect effects; 3) since you can use random effects you reduce the risk of over-fitting, which is what happens when your model stick to every random feature of your data, although those features have no biological reality. The only problems with fitting a single models are: 1) it may be difficult to fit the model if we try to include variation and interaction between every effect; 2) since we use random effects we make assumptions about the distribution of effects among years.**
+
+**A better model may be "reproduction ~ 1 + mass*sex + (1+mass*sex|year)". That model captures all the features we can see on the 20 models fitted by geom_smooth(), but in a single model. It would let use quantify and test the variation in the effect of sex with year, the effect of mass with sex, and the interaction mass:sex among years. This is quite a complex model, however, and it may be difficult to fit it and get estimates for all parameters.**
 
 7. Make a graph for the predicted reproductive success as a function of mass and sex, on an average year (**0.5pt**). On the same graph, add the predicted reproductive success as a function of mass and sex, on a "typical year" (that is, when the random effect of year for the intercept and for mass is zero). (**0.5pt**) 
 Which one shows a stronger effect? Why is that the case (mathematically)? Which one do you think is more interesting? ( _1pt bonus_)
@@ -159,8 +179,18 @@ newdata_volesMedian <- bind_cols(newdata_volesMedian, as_tibble(predict(m2, re.f
                                     newdata = newdata_volesMedian, type = "link", 
                               se.fit = TRUE)) )
 newdata_volesMedian <- newdata_volesMedian %>% mutate(rate = exp(fit),
-                                                      lowCI = exp(fit - 1.96*se.fit ), upCI = exp(fit+1.96*se.fit))
+                                                      lowCI = exp(fit - 1.96*se.fit ), 
+                                                      upCI = exp(fit+1.96*se.fit))
 
+newdata_voles <- expand_grid(mass = seq(min(voles$mass, na.rm = TRUE),
+                                        max(voles$mass, na.rm = TRUE), length.out = 100), 
+                  sex=c("Male", "Female"), year=seq(min(voles$year), max(voles$year)))
+
+newdata_voles <- bind_cols(newdata_voles, as_tibble(predict(m2, re.form = NULL, 
+                                    newdata = newdata_voles, type = "link", 
+                              se.fit = TRUE)) )
+
+newdata_voles <- newdata_voles %>% mutate(rate = exp(fit), lowCI = exp(fit - 1.96*se.fit ), upCI = exp(fit+1.96*se.fit))
 
 meanpred <- newdata_voles %>% group_by(mass, sex) %>%
   summarise(mean_rate = mean(exp(fit)), 

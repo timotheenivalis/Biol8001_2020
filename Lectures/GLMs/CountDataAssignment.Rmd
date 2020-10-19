@@ -69,6 +69,8 @@ ggplot(gambusia, aes(y=No.Cop_Attempts, x=Time_Female.sec)) + geom_point() +
 
 4. Discuss whether the effect of ```Time_Female.sec``` is surprising? Is the intercept is biologically meaningful and why? (0.5pt) (bonus 0.5pt if you can explain why this is an intrinsic limitation of count data GLMs)
 
+**Time_Female.sec has a positive effect on No.Cop_Attempts. This is not surprising since a male needs to spend time close to a female in order to attempt copulation. We could have predicted the direction of the effect without even looking at the data. However, fitting a model lets us quantify exactly the strength of that effect and the variation around it: some males spend lots of time with females but still attempt few copulations.**
+
 **The intercept is not biologically meaningful, because if a male spends 0s with a female, it is logically impossible for him to attempt any copulations. Ideally you would like your model to predict exactly 0 copulation attempts when Time_Female.sec is 0. But that is impossible. A count data GLM can predict only positive values, because it uses a log-link function and the logarithm of 0 is not defined mathematically. That is an intrinsic limitation of this type of GLMs. In practice it is not a problem because the model could still predict a value very close to zero.**
 
 ## Red deer
@@ -98,7 +100,7 @@ deer <- deer %>% filter(ShotOrNot != "Living")
 ggplot(deer, aes(lifetime_reproduction)) + geom_histogram() + facet_wrap(~sex)
 ```
 
-The distributions of lifetime reprodiction are quite different for females vs. males, so we should probably include sex in the models. 
+**The distributions of lifetime reprodiction are quite different for females vs. males, so we should probably include sex in the models. **
 
 2. Does the proportion of immigrant genetic ancestry affect lifetime reproduction? Fit a negative-binomial 1 GLM to quantify and test the effect of immigrant genetic ancestry. What happens if you add an additive effect for sex? (1pt) (+ bonus 0.5pt if you can explain why sex changes the result)
 ```{r}
@@ -162,11 +164,11 @@ ggplot(deer, aes(x=lifetime_reproduction))+geom_bar() +
 
 ```
 
-The model shows under-dispersion compare to the data. The model produces more values 1 and 2 than there are in the data. That is probably because there are many 0s in the data. The model does a good job at predicting the amount of 0s, but in doing so produces a wrongly shaped distribution.
+**The model shows under-dispersion compare to the data. The model produces more values 1 and 2 than there are in the data. That is probably because there are many 0s in the data. The model does a good job at predicting the amount of 0s, but in doing so produces a wrongly shaped distribution. A consequence of under-dispersion is a likely over-estimation of p-values. More in general, if the fit is poor we will trust less parameter estimates.**
 
 
 5. Try other count data GLM families. Do they work better? Discuss what else you could do, or what property should a GLM have to better represent these data. (0.5pt)
 
-Simple GLM families will not fix the problem. There is an excess of zero in the data. Biologically that is because the distribution of lifetime reproduction comes from two distinct processes: survival and reproduction. A deer needs to survive until adulthood to get a chance of getting any reproductive success. Once a deer is adult, it may or may not reproduce. So, we have a combination of a bernoulli process (survival) and a Poisson process (reproduction), both of which can generate zero. We would need a model that is aware of these two processes. Such models include zero-inflated and hurdle models and are available in glmmTMB.
+**Simple GLM families will not fix the problem. There is an excess of zero in the data. Biologically that is because the distribution of lifetime reproduction comes from two distinct processes: survival and reproduction. A deer needs to survive until adulthood to get a chance of getting any reproductive success. Once a deer is adult, it may or may not reproduce. So, we have a combination of a bernoulli process (survival) and a Poisson process (reproduction), both of which can generate zero. We would need a model that is aware of these two processes. Such models include zero-inflated and hurdle models and are available in glmmTMB.**
 
 
